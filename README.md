@@ -139,7 +139,7 @@ Firestore indexes these automatically, so **no composite indexes are needed**. T
 **Accounts.** Players register and log in with a nickname and a password, using Firebase Authentication (email/password provider).
 - Passwords are sent only to Firebase Authentication over HTTPS. Google hashes them with scrypt and rate-limits guessing. Neither the app nor Firestore ever stores a password or a password hash.
 - Firebase needs an email address, so each nickname maps to `<sha256(lowercased nickname)>@habitrivals.app`. No email is ever sent.
-- Passwords must be 8–128 characters and different from the nickname.
+- Passwords must be 6–128 characters (6 is the minimum Firebase Authentication accepts) and different from the nickname.
 - Login errors never reveal whether the nickname or the password was wrong.
 - The login is kept by Firebase across restarts. Registering never logs the player in. If creating the player account fails, the new login is deleted again.
 

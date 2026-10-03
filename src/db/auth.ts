@@ -22,7 +22,8 @@ import { createUser, toUserId, validateNickname, type UserProfile } from "./user
 // Must match `loginEmail` in firestore.rules.
 const LOGIN_EMAIL_DOMAIN = "habitrivals.app";
 
-export const MIN_PASSWORD_LENGTH = 8;
+// Firebase Authentication rejects anything shorter than 6 characters, so this is the lowest possible.
+export const MIN_PASSWORD_LENGTH = 6;
 export const MAX_PASSWORD_LENGTH = 128;
 
 // The hash keeps the address plain ASCII for any nickname (e.g. "Łukasz") and within email length limits.

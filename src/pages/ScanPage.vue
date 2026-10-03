@@ -30,7 +30,7 @@ const qrScanner = new QrScanner(QR_READER_ID);
 const nfcScanner = new NfcScanner();
 
 const stopQr = () => {
-  qrScanner.stop();
+  void qrScanner.stop();
   isQrActive.value = false;
 };
 
@@ -88,15 +88,21 @@ const startQrScan = async () => {
     return;
   }
 
-  qrScanner.start((decodedText) => {
-    // The camera keeps decoding until it is stopped; only the first result counts.
-    if (!isQrActive.value) {
-      return;
-    }
+  try {
+    await qrScanner.start((decodedText) => {
+      // The camera keeps decoding until it is stopped; only the first result counts.
+      if (!isQrActive.value) {
+        return;
+      }
 
-    stopQr();
-    void processScan(decodedText, "qr");
-  });
+      stopQr();
+      void processScan(decodedText, "qr");
+    });
+  } catch (error) {
+    isQrActive.value = false;
+    errorMessage.value = toErrorMessage(error, "The camera could not be opened.");
+    status.value = "Camera unavailable.";
+  }
 };
 
 const startNfcScan = async () => {
@@ -131,7 +137,7 @@ const stopNfcScan = () => {
 };
 
 onBeforeUnmount(() => {
-  qrScanner.stop();
+  void qrScanner.stop();
   nfcScanner.stop();
 });
 </script>
