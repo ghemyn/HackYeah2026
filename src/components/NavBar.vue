@@ -11,12 +11,14 @@ const logOut = () => {
 
 <template>
   <header class="navbar-wrap">
-    <nav class="navbar">
+    <div class="brand">HABIT<span>RIVALS</span><small>SHOW UP / TOGETHER</small></div>
+    <nav class="navbar" aria-label="Main navigation">
       <div class="tabs">
         <button
           v-for="page in pages"
           :key="page.id"
           type="button"
+          :aria-current="currentPageId === page.id ? 'page' : undefined"
           :class="currentPageId === page.id ? 'primary' : 'secondary'"
           @click="navigate(page.id)"
         >
@@ -26,7 +28,7 @@ const logOut = () => {
 
       <div v-if="currentUser" class="user-badge">
         <span class="user-avatar" aria-hidden="true">{{ profile?.avatar ?? "…" }}</span>
-        <span>Logged in as <strong>{{ currentUser.nickname }}</strong></span>
+        <span><strong>{{ currentUser.nickname }}</strong></span>
         <button type="button" class="secondary small" @click="logOut">Log out</button>
       </div>
     </nav>
@@ -36,11 +38,17 @@ const logOut = () => {
 </template>
 
 <style scoped>
+.brand { font-size:1.8rem; font-weight:950; letter-spacing:-.07em; display:flex; align-items:center; }
+.brand span { color:#c93813; }
+.brand small { margin-left:auto; font-size:.65rem; letter-spacing:.15em; color:var(--muted); }
+.tabs .primary { background:var(--ink); color:var(--surface); }
 .navbar-wrap {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(100%, 720px);
+  width: min(100%, 1080px);
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 20px;
 }
 
 .navbar {
@@ -65,12 +73,12 @@ const logOut = () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #cbd5e1;
+  color: var(--ink);
   font-size: 0.92rem;
 }
 
 .user-badge strong {
-  color: white;
+  color: var(--ink);
 }
 
 .user-avatar {

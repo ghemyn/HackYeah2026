@@ -14,6 +14,7 @@ import {
 import { scheduleLabel } from "../game/schedule";
 import { navigate } from "../navigation";
 import { isNfcSupported, writeNfcText } from "../scanners/nfcScanner";
+import ScoreNumber from "./ScoreNumber.vue";
 import HabitLeaderboard from "./HabitLeaderboard.vue";
 import HabitMembers from "./HabitMembers.vue";
 import QrCodeCard from "./QrCodeCard.vue";
@@ -28,7 +29,7 @@ const props = defineProps<{
 
 const isBusy = ref(false);
 const showTag = ref(false);
-const showLeaderboard = ref(true);
+const showLeaderboard = ref(false);
 const message = ref("");
 const errorMessage = ref("");
 const canWriteNfc = isNfcSupported();
@@ -92,17 +93,18 @@ const leave = () => {
 
       <!-- Opens the scanner only; checking in requires scanning this habit's QR code or NFC tag. -->
       <button v-if="canCheckInToday" type="button" class="primary check-in" @click="navigate('scan')">
-        Scan to check in
+        {{ doneToday ? "Scan again →" : "Scan →" }}
       </button>
       <span v-else class="status-label" :class="{ done: doneToday }">
-        {{ doneToday ? "Done today ✓" : "Not due today" }}
+        {{ doneToday ? "Checked in ✓" : "No scan due" }}
         <small v-if="nextDay">Next: {{ describeDay(nextDay, today) }}</small>
       </span>
     </div>
 
+    <div class="habit-progress" role="progressbar" :aria-label="habit.name + ' ' + progress.label" :aria-valuenow="progress.count" :aria-valuemin="0" :aria-valuemax="Math.max(progress.target, progress.count)"><span :style="{ width: Math.min(100, progress.count / progress.target * 100) + '%' }"></span></div>
     <p v-if="myStanding" class="standing">
-      <strong>{{ myStanding.points }} pts</strong> · #{{ myStanding.rank }} of {{ standings.length }} · 🔥
-      {{ myStanding.streak }}
+      <strong><ScoreNumber :value="myStanding.points" /> pts</strong> · #{{ myStanding.rank }} of {{ standings.length }} · 🔥
+      <ScoreNumber :value="myStanding.streak" /> check-in streak
       <template v-if="myStanding.lazySnail"> · 🐌 Lazy Snail — scan the tag to shake it off!</template>
     </p>
 
@@ -140,19 +142,25 @@ const leave = () => {
 </template>
 
 <style scoped>
+.habit-progress { height:4px; background:var(--line); overflow:hidden; }
+.habit-progress span { display:block; height:100%; background:var(--ink); transition:width 300ms ease, background 250ms; }
+.done .habit-progress span { background:var(--lime); }
+.habit-card { transition:background 250ms; }
+.habit-tools button { padding:5px 8px; background:transparent; border-color:transparent; font-size:.75rem; }
 .habit-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(148, 163, 184, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 20px 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--ink);
 }
 
 .habit-card.done {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: rgba(74, 222, 128, 0.35);
+  background: transparent;
+  border-color: var(--ink);
 }
 
 .habit-main {
@@ -179,7 +187,7 @@ const leave = () => {
 }
 
 .habit-text small {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .status-label {
@@ -187,31 +195,31 @@ const leave = () => {
   flex-direction: column;
   align-items: flex-end;
   font-weight: 700;
-  color: #cbd5e1;
+  color: var(--ink);
   white-space: nowrap;
 }
 
 .status-label.done {
-  color: #86efac;
+  color: #39500c;
 }
 
 .status-label small {
   font-weight: 400;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .standing {
   margin: 0;
-  color: #cbd5e1;
+  color: var(--ink);
 }
 
 .standing strong {
-  color: white;
+  color: var(--ink);
 }
 
 .habit-message {
   margin: 0;
-  color: #bbf7d0;
+  color: #39500c;
   font-weight: 700;
 }
 

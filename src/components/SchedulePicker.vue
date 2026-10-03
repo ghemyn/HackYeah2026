@@ -193,7 +193,7 @@ const isWeekdayPreset = (preset: { days: number[] }) =>
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  color: #cbd5e1;
+  color: var(--ink);
 }
 
 .interval-row input {
@@ -201,10 +201,10 @@ const isWeekdayPreset = (preset: { days: number[] }) =>
   font: inherit;
   text-align: center;
   padding: 0.6rem 0.4rem;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.8);
-  color: #e2e8f0;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .presets,
@@ -218,15 +218,15 @@ const isWeekdayPreset = (preset: { days: number[] }) =>
   padding: 0.45rem 0.8rem;
   border-radius: 999px;
   font-size: 0.88rem;
-  background: rgba(148, 163, 184, 0.12);
-  color: #e2e8f0;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--line);
+  color: var(--ink);
+  border: 1px solid var(--line);
 }
 
 .chip.selected {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: #38bdf8;
-  color: white;
+  background: #ece7ff;
+  border-color: #c93813;
+  color: var(--ink);
 }
 
 .weekday {
@@ -235,16 +235,16 @@ const isWeekdayPreset = (preset: { days: number[] }) =>
 
 .schedule-summary {
   margin: 0;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .schedule-summary strong {
-  color: #e2e8f0;
+  color: var(--ink);
 }
 
 .schedule-error {
   margin: 0;
-  color: #fca5a5;
+  color: #a62e18;
 }
 
 @media (max-width: 640px) {

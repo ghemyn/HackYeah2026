@@ -32,7 +32,7 @@ const profiles = useProfiles(() => [props.taunt.fromId]);
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 4px;
   background: rgba(249, 115, 22, 0.12);
   border: 1px solid rgba(251, 146, 60, 0.45);
 }
@@ -53,7 +53,7 @@ const profiles = useProfiles(() => [props.taunt.fromId]);
 }
 
 .taunt-text strong {
-  color: #fed7aa;
+  color: #823b12;
   overflow-wrap: anywhere;
 }
 
@@ -64,6 +64,6 @@ const profiles = useProfiles(() => [props.taunt.fromId]);
 }
 
 .taunt-text small {
-  color: #94a3b8;
+  color: var(--muted);
 }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import { toErrorMessage } from "../common";
+import RivalScoreboard from "../components/RivalScoreboard.vue";
 import FriendHabits from "../components/FriendHabits.vue";
 import HabitCard from "../components/HabitCard.vue";
 import HabitForm from "../components/HabitForm.vue";
@@ -9,7 +10,7 @@ import { useFriendProfiles } from "../composables/useFriendProfiles";
 import { useToday } from "../composables/useToday";
 import { memberStats, watchHabits, type Habit } from "../db/habits";
 import { watchTauntsAt, type Taunt } from "../db/taunts";
-import { habitStandings, isHabitDoneToday } from "../game/progress";
+import { checkInBlocker, isHabitDoneToday } from "../game/progress";
 import { navigate } from "../navigation";
 import { requireUserId } from "../session";
 
@@ -21,12 +22,14 @@ const habits = ref<Habit[]>([]);
 const loaded = ref(false);
 const errorMessage = ref("");
 const showForm = ref(false);
+const tauntError = ref("");
 
 const stopWatching = watchHabits(
   userId,
   (nextHabits) => {
     habits.value = nextHabits;
     loaded.value = true;
+    errorMessage.value = "";
   },
   (error) => {
     errorMessage.value = toErrorMessage(error, "Your habits could not be loaded.");
@@ -39,10 +42,11 @@ const taunts = ref<Record<string, Taunt>>({});
 const stopWatchingTaunts = watchTauntsAt(
   userId,
   (nextTaunts) => {
+    tauntError.value = "";
     taunts.value = Object.fromEntries(nextTaunts.map((taunt) => [taunt.habitId, taunt]));
   },
   (error) => {
-    errorMessage.value = toErrorMessage(error, "Taunts could not be loaded.");
+    tauntError.value = toErrorMessage(error, "Taunts could not be loaded.");
   },
 );
 
@@ -55,46 +59,23 @@ const doneCount = computed(
   () => habits.value.filter((habit) => isHabitDoneToday(memberStats(habit, userId, today.value), today.value)).length,
 );
 const myHabitIds = computed(() => habits.value.map((habit) => habit.id));
-// My standing in each habit's own leaderboard.
-const myStandings = computed(() =>
-  habits.value.flatMap((habit) => {
-    const standings = habitStandings(habit, today.value);
-    const mine = standings.find((standing) => standing.userId === userId);
-    return mine ? [{ habit, standing: mine, size: standings.length }] : [];
-  }),
-);
-const firstPlaces = computed(() => myStandings.value.filter(({ standing, size }) => size > 1 && standing.rank === 1).length);
-const lazySnailHabits = computed(() =>
-  myStandings.value.filter(({ standing }) => standing.lazySnail).map(({ habit }) => habit.name),
-);
+const actionableCount = computed(() => habits.value.filter(habit => !checkInBlocker(habit, memberStats(habit, userId, today.value), today.value)).length);
 </script>
 
 <template>
   <section class="panel">
     <div class="header">
-      <p class="eyebrow">Home</p>
-      <h1>Your habits</h1>
+      <p class="eyebrow">Your daily competition</p>
+      <h1>SHOW UP. PULL AHEAD.</h1>
     </div>
 
-    <div class="stats">
-      <div class="stat">
-        <strong>{{ habits.length }}</strong>
-        <span>habits joined</span>
-      </div>
-      <div class="stat">
-        <strong>👑 {{ firstPlaces }}</strong>
-        <span>leaderboards led</span>
-      </div>
-      <div class="stat">
-        <strong>{{ doneCount }}/{{ habits.length }}</strong>
-        <span>done today</span>
-      </div>
+    <RivalScoreboard v-if="loaded" :habits="habits" :user-id="userId" :today="today" />
+    <div v-if="loaded" class="today-summary" aria-live="polite">
+      <h2>Today's lineup</h2>
+      <span>{{ doneCount }}/{{ habits.length }} habits checked in · {{ actionableCount }} available to scan</span>
     </div>
-
-    <div v-if="lazySnailHabits.length > 0" class="snail-box">
-      🐌 You're a Lazy Snail in {{ lazySnailHabits.join(", ") }}! Scan the tag to shake it off.
-    </div>
-    <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="error-box" role="alert">{{ errorMessage }}</div>
+    <div v-if="tauntError" class="error-box" role="alert">{{ tauntError }}</div>
 
     <div class="actions">
       <button type="button" class="primary" @click="navigate('scan')">Scan a tag</button>
@@ -110,43 +91,39 @@ const lazySnailHabits = computed(() =>
     <p v-if="!loaded && !errorMessage" class="hint">Loading habits...</p>
     <p v-else-if="loaded && habits.length === 0" class="hint">No habits yet. Create one, join a friend's habit below, or scan a habit's QR code.</p>
 
-    <div class="habit-list">
+    <TransitionGroup name="lineup" tag="div" class="habit-list">
       <div v-for="habit in habits" :key="habit.id" class="habit-entry">
         <TauntBanner v-if="taunts[habit.id]" :taunt="taunts[habit.id]" :today="today" />
         <HabitCard :habit="habit" :user-id="userId" :friends="friends" :today="today" />
       </div>
-    </div>
+    </TransitionGroup>
 
     <FriendHabits :user-id="userId" :friends="friends" :my-habit-ids="myHabitIds" :today="today" />
   </section>
 </template>
 
 <style scoped>
+.today-summary { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.today-summary h2 { margin:0; font-size:1.5rem; }
+.today-summary span { color:var(--muted); font-size:.85rem; }
+.lineup-enter-active, .lineup-leave-active, .lineup-move { transition: opacity 250ms, transform 250ms; }
+.lineup-enter-from, .lineup-leave-to { opacity:0; transform:translateY(8px); }
 .form-box {
   margin-bottom: 18px;
   padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 4px;
+  border: 1px solid var(--line);
 }
 
 .habit-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
 .habit-entry {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.snail-box {
-  margin-bottom: 16px;
-  padding: 0.9rem 1rem;
-  border-radius: 12px;
-  background: rgba(234, 179, 8, 0.12);
-  border: 1px solid rgba(250, 204, 21, 0.4);
-  color: #fef08a;
 }
 </style>

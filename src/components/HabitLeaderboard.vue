@@ -150,15 +150,15 @@ const onTauntSent = () => {
 }
 
 .list-row.me {
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(56, 189, 248, 0.1);
+  border-color: #ece7ff;
+  background: #ece7ff;
 }
 
 .rank {
   width: 1.6rem;
   text-align: center;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .points {
@@ -167,7 +167,7 @@ const onTauntSent = () => {
 }
 
 .row-text small.taunted {
-  color: #fdba74;
+  color: #823b12;
 }
 
 .taunt-button {
@@ -176,7 +176,7 @@ const onTauntSent = () => {
 
 .taunt-sent {
   margin: 0;
-  color: #fdba74;
+  color: #823b12;
   font-weight: 700;
 }
 

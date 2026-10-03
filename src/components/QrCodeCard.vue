@@ -108,13 +108,13 @@ const download = () => {
 
 .qr-card img {
   width: min(100%, 260px);
-  border-radius: 12px;
+  border-radius: 4px;
 }
 
 .qr-card code {
   word-break: break-all;
   font-size: 0.82rem;
-  color: #94a3b8;
+  color: var(--muted);
   text-align: center;
 }
 

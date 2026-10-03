@@ -74,15 +74,15 @@ const otherCount = computed(
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px;
-  color: #cbd5e1;
+  color: var(--ink);
 }
 
 .habit-members li.done small {
-  color: #86efac;
+  color: #39500c;
 }
 
 .habit-members small {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .others {

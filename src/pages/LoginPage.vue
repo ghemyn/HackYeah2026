@@ -224,10 +224,10 @@ const submitRegister = () => {
 
 .success-box {
   padding: 0.9rem 1rem;
-  border-radius: 12px;
+  border-radius: 4px;
   background: rgba(34, 197, 94, 0.12);
   border: 1px solid rgba(74, 222, 128, 0.4);
-  color: #bbf7d0;
+  color: #39500c;
 }
 
 .switch-hint {
@@ -240,7 +240,7 @@ const submitRegister = () => {
   padding: 0;
   border: none;
   background: none;
-  color: #38bdf8;
+  color: #c93813;
   font-weight: 700;
   text-decoration: underline;
   cursor: pointer;

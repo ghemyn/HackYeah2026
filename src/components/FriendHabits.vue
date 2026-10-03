@@ -105,9 +105,9 @@ const join = async (habit: Habit) => {
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(148, 163, 184, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 4px;
+  background: var(--line);
+  border: 1px solid var(--line);
 }
 
 .friend-habit-main {

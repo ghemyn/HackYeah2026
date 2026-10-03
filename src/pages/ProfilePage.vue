@@ -183,7 +183,7 @@ const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}
 
 .rules td {
   padding: 0.6rem 0.4rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  border-bottom: 1px solid var(--line);
 }
 
 .rules td:last-child {
@@ -193,10 +193,10 @@ const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}
 }
 
 .gain {
-  color: #86efac;
+  color: #39500c;
 }
 
 .loss {
-  color: #fca5a5;
+  color: #a62e18;
 }
 </style>

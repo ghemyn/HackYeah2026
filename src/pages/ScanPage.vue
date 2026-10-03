@@ -150,19 +150,20 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="actions">
-      <button v-if="!isQrActive" type="button" class="primary" @click="startQrScan">Scan QR code</button>
+      <button v-if="!isQrActive" type="button" class="primary" :disabled="isBusy" @click="startQrScan">Scan QR code</button>
       <button v-else type="button" class="secondary" @click="stopQr">Stop camera</button>
-      <button v-if="!isNfcActive" type="button" class="secondary" @click="startNfcScan">Scan NFC tag</button>
+      <button v-if="!isNfcActive" type="button" class="secondary" :disabled="isBusy" @click="startNfcScan">Scan NFC tag</button>
       <button v-else type="button" class="secondary" @click="stopNfcScan">Stop NFC</button>
     </div>
 
     <div class="status-row">
-      <span class="status-pill">{{ status }}</span>
+      <span class="status-pill" role="status" :aria-busy="isBusy">{{ status }}</span>
     </div>
 
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
-    <div v-if="outcome" class="outcome">
+    <Transition name="result" mode="out-in">
+    <div v-if="outcome" :key="JSON.stringify(outcome)" class="outcome" aria-live="polite">
       <template v-if="outcome.kind === 'check-in'">
         <span class="outcome-icon">{{ outcome.result.habit.icon }}</span>
         <div>
@@ -193,6 +194,8 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
+    </Transition>
+
     <div v-show="isQrActive" :id="QR_READER_ID" class="scanner-box" aria-live="polite"></div>
   </section>
 </template>
@@ -201,10 +204,10 @@ onBeforeUnmount(() => {
 .scanner-box {
   width: 100%;
   min-height: 260px;
-  border-radius: 18px;
+  border-radius: 4px;
   overflow: hidden;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: var(--surface);
+  border: 1px solid var(--line);
   margin-bottom: 18px;
 }
 
@@ -214,7 +217,7 @@ onBeforeUnmount(() => {
   gap: 14px;
   margin-bottom: 18px;
   padding: 16px;
-  border-radius: 18px;
+  border-radius: 4px;
   background: rgba(34, 197, 94, 0.14);
   border: 1px solid rgba(74, 222, 128, 0.4);
 }
@@ -225,11 +228,11 @@ onBeforeUnmount(() => {
 
 .outcome strong {
   font-size: 1.3rem;
-  color: white;
+  color: var(--ink);
 }
 
 .outcome p {
   margin: 4px 0 0;
-  color: #bbf7d0;
+  color: #39500c;
 }
 </style>

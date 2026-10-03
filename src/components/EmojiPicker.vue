@@ -35,12 +35,12 @@ const selected = defineModel<string>({ required: true });
   padding: 0.6rem 0;
   font-size: 1.5rem;
   line-height: 1;
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--line);
   border: 2px solid transparent;
 }
 
 .emoji-picker button.selected {
-  border-color: #38bdf8;
-  background: rgba(56, 189, 248, 0.18);
+  border-color: #c93813;
+  background: #ece7ff;
 }
 </style>

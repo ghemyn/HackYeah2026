@@ -96,7 +96,7 @@ const send = async () => {
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: 4px;
   background: rgba(249, 115, 22, 0.08);
   border: 1px solid rgba(251, 146, 60, 0.35);
 }
@@ -116,7 +116,7 @@ const send = async () => {
   padding: 0.45rem 0;
   font-size: 1.3rem;
   line-height: 1;
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--line);
   border: 2px solid transparent;
 }
 
