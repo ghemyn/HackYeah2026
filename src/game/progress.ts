@@ -1,7 +1,7 @@
 // Pure scoring helpers shared by the database layer and the pages. No Firebase access here.
 
 import { addDays, daysBetween, laterDateKey, weekStartKey, type DateKey } from "../common";
-import type { Habit } from "../db/habits";
+import type { HabitMemberStats } from "../db/habits";
 import type { UserProfile } from "../db/users";
 import { LAZY_SNAIL_AFTER_MISSED_DAYS, POINTS, STREAK_BONUS_EVERY_DAYS } from "./rules";
 
@@ -81,8 +81,9 @@ export const unsettledPenalties = (
 export const isLazySnail = (profile: Pick<UserProfile, "lastCheckInDate">, today: DateKey): boolean =>
   missedDaysInRow(profile, today) >= LAZY_SNAIL_AFTER_MISSED_DAYS;
 
-export const isHabitDoneToday = (habit: Pick<Habit, "lastCheckInDate">, today: DateKey): boolean =>
-  habit.lastCheckInDate === today;
+// Per-member habit progress (see HabitMemberStats in db/habits.ts).
+export const isHabitDoneToday = (stats: Pick<HabitMemberStats, "lastCheckInDate">, today: DateKey): boolean =>
+  stats.lastCheckInDate === today;
 
-export const habitCountThisWeek = (habit: Pick<Habit, "weekStart" | "weekCount">, today: DateKey): number =>
-  habit.weekStart === weekStartKey(today) ? habit.weekCount : 0;
+export const habitCountThisWeek = (stats: Pick<HabitMemberStats, "weekStart" | "weekCount">, today: DateKey): number =>
+  stats.weekStart === weekStartKey(today) ? stats.weekCount : 0;

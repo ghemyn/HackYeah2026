@@ -34,7 +34,7 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | `src/App.vue` | Shows the login page, or the navbar plus the current page. Rarely needs changes. |
 | `src/pages/` | One `.vue` file per page (Today, Scan, Friends, Leaderboard, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
-| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `QrCodeCard`, `EmojiPicker`. |
+| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
 | `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties and weekly bonus) and `firebase.ts` (setup). |
 | `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
@@ -56,6 +56,7 @@ All numbers are in `src/game/rules.ts`.
 | Each day without any check-in (streak resets) | −5 |
 | 3rd missed day in a row, extra (🐌 Lazy Snail badge) | −15 |
 
+- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it (which also checks them in) or from "Your friends' habits" on the Today page. Members see how their friends are doing in each habit.
 - Checking in is only possible by scanning the habit's own QR code or NFC tag. There is no check-in button and codes can't be typed in.
 - One check-in per habit per day.
 - The streak counts days with at least one check-in.
@@ -85,23 +86,23 @@ Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local tim
 | `createdAt` | timestamp | Server time |
 
 ### `habits/{habitId}`
-`habitId` is a random UUID.
+`habitId` is a random UUID. Habits are shared: anyone can join one, and all members check in by scanning the same tag.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `userId` | string | Owner |
+| `creatorId` | string | Who created it (no special rights afterwards) |
 | `name`, `icon` | string | Name and emoji |
 | `timesPerWeek` | number | 1–7 (7 = every day) |
 | `tagCode` | string | Secret UUID inside the habit's QR code / NFC sticker |
 | `createdDate` | string | |
-| `lastCheckInDate` | string \| null | |
-| `weekStart` | string \| null | Monday of the week `weekCount` refers to |
-| `weekCount` | number | Check-ins that week |
-| `totalCheckIns` | number | |
+| `memberIds` | string[] | Members' user IDs (used for querying) |
+| `members` | map | `{ [userId]: { joinedDate, lastCheckInDate, weekStart, weekCount, totalCheckIns } }`, each member's progress |
 | `createdAt` | timestamp | |
 
-### `checkins/{habitId}_{date}`
-The document ID guarantees one check-in per habit per day.
+`memberIds` and `members` always contain the same users. The last member to leave deletes the habit.
+
+### `checkins/{habitId}:{userId}:{date}`
+The document ID guarantees one check-in per player per habit per day.
 
 | Field | Type |
 | --- | --- |
@@ -128,8 +129,9 @@ Stored in both directions, so adding a friend writes two documents.
 | `createdAt` | timestamp |
 
 ### Queries and indexes
-The app only uses single-field equality queries:
-- `habits` where `userId ==`
+The app only uses single-field queries:
+- `habits` where `memberIds array-contains`
+- `habits` where `memberIds array-contains-any` (friends' habits, in groups of 30)
 - `habits` where `tagCode ==`
 - `friends` where `userId ==`
 - `badges` where `userId ==`

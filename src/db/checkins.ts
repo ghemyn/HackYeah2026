@@ -1,10 +1,10 @@
-import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { arrayUnion, doc, runTransaction, serverTimestamp } from "firebase/firestore";
 import { todayKey, weekStartKey } from "../common";
 import { earnsStreakBonus, habitCountThisWeek, rollWeek, streakAfterCheckIn } from "../game/progress";
 import { POINTS } from "../game/rules";
 import { badgeData, badgeRef } from "./badges";
 import { COLLECTIONS, db } from "./firebase";
-import { habitRef, toHabit, type Habit } from "./habits";
+import { habitRef, isHabitMember, memberStats, memberStatsPath, toHabit, type Habit, type HabitMemberStats } from "./habits";
 import { settleMissedDays } from "./settlement";
 import { toUserProfile, userRef } from "./users";
 
@@ -12,12 +12,15 @@ import { toUserProfile, userRef } from "./users";
 export type CheckInMethod = "qr" | "nfc";
 
 export type CheckInResult =
-  | { status: "checked-in"; habit: Habit; points: number; streak: number; streakBonus: boolean }
-  | { status: "already-done"; habit: Habit };
+  | { status: "checked-in"; habit: Habit; joined: boolean; points: number; streak: number; streakBonus: boolean }
+  | { status: "already-done"; habit: Habit; joined: boolean };
 
-// One check-in per habit per day: the document ID makes a second one impossible.
-const checkinRef = (habitId: string, date: string) => doc(db, COLLECTIONS.checkins, `${habitId}_${date}`);
+// One check-in per player per habit per day: the document ID makes a second one impossible.
+// ":" cannot appear in habit IDs (UUIDs), user IDs or dates, so the IDs never collide.
+const checkinRef = (habitId: string, userId: string, date: string) =>
+  doc(db, COLLECTIONS.checkins, `${habitId}:${userId}:${date}`);
 
+// Checks the player in to a habit. Scanning a habit the player has not joined yet joins it first.
 export const checkIn = async (userId: string, habitId: string, method: CheckInMethod): Promise<CheckInResult> => {
   // Apply penalties for days missed before today first, so they are never skipped.
   await settleMissedDays(userId);
@@ -27,7 +30,7 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
     const [userSnapshot, habitSnapshot, checkinSnapshot] = await Promise.all([
       transaction.get(userRef(userId)),
       transaction.get(habitRef(habitId)),
-      transaction.get(checkinRef(habitId, today)),
+      transaction.get(checkinRef(habitId, userId, today)),
     ]);
 
     if (!userSnapshot.exists()) {
@@ -39,13 +42,24 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
     }
 
     const habit = toHabit(habitSnapshot.id, habitSnapshot.data());
-
-    if (habit.userId !== userId) {
-      throw new Error("This habit belongs to another player.");
-    }
+    const joined = !isHabitMember(habit, userId);
+    const stats = memberStats(habit, userId, today);
+    const weekStart = weekStartKey(today);
+    const statsAfterCheckIn: HabitMemberStats = {
+      ...stats,
+      lastCheckInDate: today,
+      weekStart,
+      weekCount: habitCountThisWeek(stats, today) + 1,
+      totalCheckIns: stats.totalCheckIns + 1,
+    };
 
     if (checkinSnapshot.exists()) {
-      return { status: "already-done", habit };
+      // Left and re-joined on a day already checked in: restore the membership with today's check-in.
+      if (joined) {
+        transaction.update(habitSnapshot.ref, memberStatsPath(userId), statsAfterCheckIn, "memberIds", arrayUnion(userId));
+      }
+
+      return { status: "already-done", habit, joined };
     }
 
     const profile = toUserProfile(userSnapshot.id, userSnapshot.data());
@@ -55,7 +69,7 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
     const points = POINTS.checkIn + (streakBonus ? POINTS.streakBonus : 0);
     const week = rollWeek(profile, today);
 
-    transaction.set(checkinRef(habitId, today), {
+    transaction.set(checkinRef(habitId, userId, today), {
       userId,
       habitId,
       date: today,
@@ -64,12 +78,7 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
       createdAt: serverTimestamp(),
     });
 
-    transaction.update(habitSnapshot.ref, {
-      lastCheckInDate: today,
-      weekStart: weekStartKey(today),
-      weekCount: habitCountThisWeek(habit, today) + 1,
-      totalCheckIns: habit.totalCheckIns + 1,
-    });
+    transaction.update(habitSnapshot.ref, memberStatsPath(userId), statsAfterCheckIn, "memberIds", arrayUnion(userId));
 
     transaction.update(userSnapshot.ref, {
       totalPoints: profile.totalPoints + points,
@@ -84,6 +93,6 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
       transaction.set(badgeRef(userId, "streak", today), badgeData(userId, "streak", today));
     }
 
-    return { status: "checked-in", habit, points, streak, streakBonus };
+    return { status: "checked-in", habit, joined, points, streak, streakBonus };
   });
 };

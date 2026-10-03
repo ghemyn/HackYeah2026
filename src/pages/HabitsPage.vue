@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import { toErrorMessage, weekStartKey } from "../common";
+import FriendHabits from "../components/FriendHabits.vue";
 import HabitCard from "../components/HabitCard.vue";
 import HabitForm from "../components/HabitForm.vue";
+import { useFriendProfiles } from "../composables/useFriendProfiles";
 import { useToday } from "../composables/useToday";
-import { watchHabits, type Habit } from "../db/habits";
+import { memberStats, watchHabits, type Habit } from "../db/habits";
 import { currentStreak, isHabitDoneToday, isLazySnail, pointsInWeek } from "../game/progress";
 import { navigate } from "../navigation";
 import { profile, requireUserId } from "../session";
 
 const userId = requireUserId();
 const today = useToday();
+const { friends } = useFriendProfiles(userId);
 
 const habits = ref<Habit[]>([]);
 const loaded = ref(false);
@@ -30,7 +33,10 @@ const stopWatching = watchHabits(
 
 onBeforeUnmount(stopWatching);
 
-const doneCount = computed(() => habits.value.filter((habit) => isHabitDoneToday(habit, today.value)).length);
+const doneCount = computed(
+  () => habits.value.filter((habit) => isHabitDoneToday(memberStats(habit, userId, today.value), today.value)).length,
+);
+const myHabitIds = computed(() => habits.value.map((habit) => habit.id));
 const weekPoints = computed(() => (profile.value ? pointsInWeek(profile.value, weekStartKey(today.value)) : 0));
 const streak = computed(() => (profile.value ? currentStreak(profile.value, today.value) : 0));
 const lazySnail = computed(() => (profile.value ? isLazySnail(profile.value, today.value) : false));
@@ -73,11 +79,13 @@ const lazySnail = computed(() => (profile.value ? isLazySnail(profile.value, tod
     </div>
 
     <p v-if="!loaded && !errorMessage" class="hint">Loading habits...</p>
-    <p v-else-if="loaded && habits.length === 0" class="hint">No habits yet. Create your first one to start earning points.</p>
+    <p v-else-if="loaded && habits.length === 0" class="hint">No habits yet. Create one, join a friend's habit below, or scan a habit's QR code.</p>
 
     <div class="habit-list">
-      <HabitCard v-for="habit in habits" :key="habit.id" :habit="habit" :today="today" />
+      <HabitCard v-for="habit in habits" :key="habit.id" :habit="habit" :user-id="userId" :friends="friends" :today="today" />
     </div>
+
+    <FriendHabits :user-id="userId" :friends="friends" :my-habit-ids="myHabitIds" :today="today" />
   </section>
 </template>
 

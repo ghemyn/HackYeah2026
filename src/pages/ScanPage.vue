@@ -18,7 +18,7 @@ const QR_READER_ID = "qr-reader";
 
 const userId = requireUserId();
 
-const status = ref("Scan a habit tag to check in, or a friend's code to add them.");
+const status = ref("Scan a habit tag to check in (or join it), or a friend's code to add them.");
 const errorMessage = ref("");
 const outcome = ref<ScanOutcome | null>(null);
 const isBusy = ref(false);
@@ -57,9 +57,7 @@ const processScan = async (rawValue: string, source: CheckInMethod) => {
         throw new Error("No habit uses this tag. It may have been deleted.");
       }
 
-      if (habit.userId !== userId) {
-        throw new Error("This tag belongs to another player's habit.");
-      }
+      // Scanning a habit you haven't joined yet joins it and checks you in.
 
       outcome.value = { kind: "check-in", result: await checkIn(userId, habit.id, source) };
     } else {
@@ -159,6 +157,7 @@ onBeforeUnmount(() => {
         <span class="outcome-icon">{{ outcome.result.habit.icon }}</span>
         <div>
           <strong>{{ outcome.result.habit.name }}</strong>
+          <p v-if="outcome.result.joined">You joined this habit!</p>
           <p v-if="outcome.result.status === 'already-done'">Already checked in today.</p>
           <p v-else>
             Checked in! +{{ outcome.result.points }} points · 🔥 {{ outcome.result.streak }} day streak

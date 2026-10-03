@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { toErrorMessage } from "../common";
-import { deleteHabit, type Habit } from "../db/habits";
+import { leaveHabit, memberStats, type Habit } from "../db/habits";
+import type { UserProfile } from "../db/users";
 import { MAX_TIMES_PER_WEEK, frequencyLabel } from "../game/catalog";
 import { habitCountThisWeek, isHabitDoneToday } from "../game/progress";
 import { navigate } from "../navigation";
 import { isNfcSupported, writeNfcText } from "../scanners/nfcScanner";
+import HabitMembers from "./HabitMembers.vue";
 import QrCodeCard from "./QrCodeCard.vue";
 
 const props = defineProps<{
   habit: Habit;
+  userId: string;
+  // The viewer's friends, to show their activity in this habit.
+  friends: UserProfile[];
   today: string;
 }>();
 
@@ -19,8 +24,10 @@ const message = ref("");
 const errorMessage = ref("");
 const canWriteNfc = isNfcSupported();
 
-const doneToday = computed(() => isHabitDoneToday(props.habit, props.today));
-const weekCount = computed(() => habitCountThisWeek(props.habit, props.today));
+const myStats = computed(() => memberStats(props.habit, props.userId, props.today));
+const doneToday = computed(() => isHabitDoneToday(myStats.value, props.today));
+const weekCount = computed(() => habitCountThisWeek(myStats.value, props.today));
+const isLastMember = computed(() => props.habit.memberIds.every((memberId) => memberId === props.userId));
 const weekTarget = computed(() => Math.min(props.habit.timesPerWeek, MAX_TIMES_PER_WEEK));
 
 const run = async (action: () => Promise<void>, fallbackError: string) => {
@@ -47,12 +54,14 @@ const writeTag = () =>
     message.value = "NFC sticker written. Tap it on the Scan page to check in.";
   }, "Writing the NFC sticker failed.");
 
-const remove = () => {
-  if (!window.confirm(`Delete "${props.habit.name}"? Its QR code and NFC sticker will stop working.`)) {
-    return;
-  }
+const leave = () => {
+  const warning = isLastMember.value
+    ? "You are its last member, so it will be deleted and its QR code and NFC sticker will stop working."
+    : "You can join again later by scanning its tag.";
 
-  void run(() => deleteHabit(props.habit.id), "The habit could not be deleted.");
+  if (window.confirm(`Leave "${props.habit.name}"? ${warning}`)) {
+    void run(() => leaveHabit(props.userId, props.habit.id), "Leaving the habit failed.");
+  }
 };
 </script>
 
@@ -71,6 +80,8 @@ const remove = () => {
       <button v-else type="button" class="primary check-in" @click="navigate('scan')">Scan to check in</button>
     </div>
 
+    <HabitMembers :habit="habit" :friends="friends" :user-id="userId" :today="today" />
+
     <p v-if="message" class="habit-message">{{ message }}</p>
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
@@ -78,11 +89,14 @@ const remove = () => {
       <button type="button" class="secondary small" @click="showTag = !showTag">
         {{ showTag ? "Hide tag" : "QR / NFC tag" }}
       </button>
-      <button type="button" class="secondary small danger" :disabled="isBusy" @click="remove">Delete</button>
+      <button type="button" class="secondary small danger" :disabled="isBusy" @click="leave">Leave</button>
     </div>
 
     <div v-if="showTag" class="habit-tag">
-      <p class="hint">Print this QR code or write it to an NFC sticker. Scanning it is the only way to check in.</p>
+      <p class="hint">
+        Print this QR code or write it to an NFC sticker. Scanning it is the only way to check in, and anyone who
+        scans it joins this habit.
+      </p>
       <QrCodeCard :value="habit.tagCode" :caption="`${habit.icon} ${habit.name}`">
         <template #actions>
           <button v-if="canWriteNfc" type="button" class="secondary" :disabled="isBusy" @click="writeTag">
