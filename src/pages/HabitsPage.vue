@@ -4,9 +4,11 @@ import { toErrorMessage } from "../common";
 import FriendHabits from "../components/FriendHabits.vue";
 import HabitCard from "../components/HabitCard.vue";
 import HabitForm from "../components/HabitForm.vue";
+import TauntBanner from "../components/TauntBanner.vue";
 import { useFriendProfiles } from "../composables/useFriendProfiles";
 import { useToday } from "../composables/useToday";
 import { memberStats, watchHabits, type Habit } from "../db/habits";
+import { watchTauntsAt, type Taunt } from "../db/taunts";
 import { habitStandings, isHabitDoneToday } from "../game/progress";
 import { navigate } from "../navigation";
 import { requireUserId } from "../session";
@@ -31,7 +33,23 @@ const stopWatching = watchHabits(
   },
 );
 
-onBeforeUnmount(stopWatching);
+// Taunts at the player, by habit. Shown above the habit's card until they check in.
+const taunts = ref<Record<string, Taunt>>({});
+
+const stopWatchingTaunts = watchTauntsAt(
+  userId,
+  (nextTaunts) => {
+    taunts.value = Object.fromEntries(nextTaunts.map((taunt) => [taunt.habitId, taunt]));
+  },
+  (error) => {
+    errorMessage.value = toErrorMessage(error, "Taunts could not be loaded.");
+  },
+);
+
+onBeforeUnmount(() => {
+  stopWatching();
+  stopWatchingTaunts();
+});
 
 const doneCount = computed(
   () => habits.value.filter((habit) => isHabitDoneToday(memberStats(habit, userId, today.value), today.value)).length,
@@ -93,7 +111,10 @@ const lazySnailHabits = computed(() =>
     <p v-else-if="loaded && habits.length === 0" class="hint">No habits yet. Create one, join a friend's habit below, or scan a habit's QR code.</p>
 
     <div class="habit-list">
-      <HabitCard v-for="habit in habits" :key="habit.id" :habit="habit" :user-id="userId" :friends="friends" :today="today" />
+      <div v-for="habit in habits" :key="habit.id" class="habit-entry">
+        <TauntBanner v-if="taunts[habit.id]" :taunt="taunts[habit.id]" :today="today" />
+        <HabitCard :habit="habit" :user-id="userId" :friends="friends" :today="today" />
+      </div>
     </div>
 
     <FriendHabits :user-id="userId" :friends="friends" :my-habit-ids="myHabitIds" :today="today" />
@@ -112,6 +133,12 @@ const lazySnailHabits = computed(() =>
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.habit-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .snail-box {

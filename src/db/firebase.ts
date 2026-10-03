@@ -25,6 +25,7 @@ export const COLLECTIONS = {
   checkins: "checkins",
   friends: "friends",
   badges: "badges",
+  taunts: "taunts",
 } as const;
 
 // Readers that tolerate missing or malformed fields in stored documents.

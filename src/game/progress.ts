@@ -240,6 +240,12 @@ export const habitStandings = (
   return rows;
 };
 
+// The habit's leader (👑): first with points above 0 and no tie for first place. Otherwise null.
+export const clearLeaderId = (standings: Standing[]): string | null => {
+  const [first, second] = standings;
+  return first && first.points > 0 && (!second || first.points > second.points) ? first.userId : null;
+};
+
 export type HabitSettlement = {
   members: Record<string, HabitMemberStats>;
   // Whether anything has to be saved.

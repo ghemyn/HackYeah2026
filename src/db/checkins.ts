@@ -4,7 +4,7 @@ import { applyCheckIn, checkInBlocker, habitStandings, isDailyLimitReached, sett
 import { POINTS } from "../game/rules";
 import { badgeData, badgeRef } from "./badges";
 import { COLLECTIONS, db } from "./firebase";
-import { habitRef, isHabitMember, membershipData, toHabit, type Habit } from "./habits";
+import { habitRef, isHabitMember, membershipData, tauntRef, toHabit, type Habit } from "./habits";
 import { writeLazySnailBadges } from "./settlement";
 import { userRef } from "./users";
 
@@ -21,6 +21,8 @@ export type CheckInResult =
       rank: number;
       streak: number;
       streakBonus: boolean;
+      // Whether a taunt at the player in this habit was cancelled.
+      tauntCancelled: boolean;
     }
   | { status: "already-done"; habit: Habit };
 
@@ -29,16 +31,17 @@ export type CheckInResult =
 const checkinRef = (habitId: string, userId: string, date: string, number: number) =>
   doc(db, COLLECTIONS.checkins, `${habitId}:${userId}:${date}:${number}`);
 
-// Checks a member in to a habit and adds the points to that habit's leaderboard.
+// Checks a member in to a habit and adds the points to that habit's leaderboard, and cancels any taunt at them.
 // Players must join the habit first (their first scan of its tag only joins it; see joinHabit).
 export const checkIn = (userId: string, habitId: string, method: CheckInMethod): Promise<CheckInResult> =>
   runTransaction(db, async (transaction) => {
     const today = todayKey();
     // The habit document holds the member's check-in counts. The transaction retries if it changes
     // meanwhile, so two scans at once can never both pass the daily limit.
-    const [userSnapshot, habitSnapshot] = await Promise.all([
+    const [userSnapshot, habitSnapshot, tauntSnapshot] = await Promise.all([
       transaction.get(userRef(userId)),
       transaction.get(habitRef(habitId)),
+      transaction.get(tauntRef(habitId, userId)),
     ]);
 
     if (!userSnapshot.exists()) {
@@ -60,11 +63,20 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
     writeLazySnailBadges(transaction, habit, settlement);
     const members = { ...settlement.members };
 
+    // Checking in cancels a taunt. Only deleted if it exists: the rules check who the taunt was at.
+    // Also cancelled when today's check-ins are already done (a leader in another time zone may be a day ahead).
+    const cancelTaunt = () => {
+      if (tauntSnapshot.exists()) {
+        transaction.delete(tauntSnapshot.ref);
+      }
+    };
+
     if (isDailyLimitReached(habit, members[userId], today)) {
       if (settlement.changed) {
         transaction.update(habitSnapshot.ref, membershipData(members));
       }
 
+      cancelTaunt();
       return { status: "already-done", habit };
     }
 
@@ -87,6 +99,7 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
       createdAt: serverTimestamp(),
     });
     transaction.update(habitSnapshot.ref, membershipData(members));
+    cancelTaunt();
 
     if (outcome.streakBonus) {
       transaction.set(badgeRef(userId, "streak", today, habit), badgeData(userId, "streak", today, habit));
@@ -103,5 +116,6 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
       rank,
       streak: outcome.stats.streak,
       streakBonus: outcome.streakBonus,
+      tauntCancelled: tauntSnapshot.exists(),
     };
   });

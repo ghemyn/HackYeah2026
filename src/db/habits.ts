@@ -65,6 +65,10 @@ const MAX_ARRAY_CONTAINS_ANY = 30;
 
 export const habitRef = (habitId: string) => doc(db, COLLECTIONS.habits, habitId);
 
+// A member's taunt in a habit (see db/taunts.ts). Kept here because leaving a habit deletes it.
+// ":" cannot appear in habit IDs (UUIDs) or user IDs, so the IDs never collide.
+export const tauntRef = (habitId: string, targetId: string) => doc(db, COLLECTIONS.taunts, `${habitId}:${targetId}`);
+
 export const newMemberStats = (today: DateKey): HabitMemberStats => ({
   joinedDate: today,
   lastCheckInDate: null,
@@ -171,10 +175,14 @@ export const joinHabit = (userId: string, habitId: string): Promise<boolean> =>
     return true;
   });
 
-// Removes the player and their points from the habit. The last member to leave deletes it, which also retires its tag.
+// Removes the player, their points and any taunt at them from the habit. The last member to leave deletes it,
+// which also retires its tag.
 export const leaveHabit = (userId: string, habitId: string): Promise<void> =>
   runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(habitRef(habitId));
+    const [snapshot, tauntSnapshot] = await Promise.all([
+      transaction.get(habitRef(habitId)),
+      transaction.get(tauntRef(habitId, userId)),
+    ]);
 
     if (!snapshot.exists()) {
       return;
@@ -184,6 +192,11 @@ export const leaveHabit = (userId: string, habitId: string): Promise<void> =>
 
     if (!isHabitMember(habit, userId)) {
       return;
+    }
+
+    // Only deleted if it exists: the rules check who the taunt was at.
+    if (tauntSnapshot.exists()) {
+      transaction.delete(tauntSnapshot.ref);
     }
 
     if (habit.memberIds.every((memberId) => memberId === userId)) {

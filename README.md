@@ -34,9 +34,9 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | `src/App.vue` | Shows the login page, or the navbar plus the current page. Rarely needs changes. |
 | `src/pages/` | One `.vue` file per page (Habits, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
-| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `SchedulePicker` (how a habit repeats), `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
-| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties), `auth.ts` (registration and login with Firebase Authentication), `sha256.ts` and `firebase.ts` (setup). |
-| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
+| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `SchedulePicker` (how a habit repeats), `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `TauntComposer` (the leader writes a taunt), `TauntBanner` (a taunt at you, above the habit's card), `QrCodeCard`, `EmojiPicker`. |
+| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`, `taunts`) plus `settlement.ts` (penalties), `auth.ts` (registration and login with Firebase Authentication), `sha256.ts` and `firebase.ts` (setup). |
+| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`), who can taunt whom (`taunts.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
 | `src/composables/` | Reusable Vue logic: live friend profiles, cached profiles of any player, today's date. |
 | `src/common.ts` | Helpers shared everywhere: UUIDs, dates, error messages, file names. |
@@ -63,11 +63,12 @@ All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the a
   - **X times every Y days** (X ≤ 20, Y ≤ 31; X may exceed Y, e.g. "3 times a day"). Cycles of Y days start on the habit's creation date and are the same for every member. At most X ÷ Y check-ins (rounded up) are allowed per day. Once X check-ins are done, the next one waits for the next cycle.
   - **On set weekdays** (any combination of Mon–Sun). Check-ins are only possible on those days.
 - Penalties start after joining: for weekday schedules from the day after joining, for interval schedules with the first cycle that starts after the joining day.
+- **Taunts.** The habit's leader (👑) can taunt members who haven't checked in today but still can, from the habit's leaderboard: 1–5 emojis plus an optional message (up to 100 characters). The taunted player sees it live above that habit's card, and everyone sees "Taunted" next to them in the leaderboard. It stays until they check in (scanning cancels it in the same transaction) or leave the habit. A new taunt at the same player in the same habit replaces the old one. Taunts cost no points.
 - There is no server: when any member opens the app or checks in, every member of that habit is charged what they owe. A player who never opens the app still loses points. This is idempotent, so nothing is charged twice. Leaderboards also include penalties that are due but not saved yet.
 
 ## Database (Firestore)
 
-Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local time. Weeks start on Monday.
+Six collections. All dates are `"YYYY-MM-DD"` strings in the player's local time. Weeks start on Monday.
 
 ### `users/{userId}`
 `userId` is the lowercased nickname. Accounts hold no points (see `habits.members`).
@@ -124,6 +125,19 @@ Stored in both directions, so adding a friend writes two documents.
 | `habitId`, `habitName` | string (the name is copied so it survives the habit being deleted) |
 | `createdAt` | timestamp |
 
+### `taunts/{habitId}:{targetId}`
+At most one taunt per player and habit; sending another one replaces it. Deleted when the target checks in or leaves the habit.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `habitId` | string | |
+| `targetId` | string | The taunted member |
+| `fromId` | string | The leader who sent it |
+| `emojis` | string[] | 1–5 emojis from `TAUNT_EMOJIS` in `src/game/taunts.ts` |
+| `message` | string | Optional, up to 100 characters |
+| `date` | string | Day it was sent |
+| `createdAt` | timestamp | |
+
 ### Queries and indexes
 The app only uses single-field queries:
 - `habits` where `memberIds array-contains`
@@ -131,8 +145,9 @@ The app only uses single-field queries:
 - `habits` where `tagCode ==`
 - `friends` where `userId ==`
 - `badges` where `userId ==`
+- `taunts` where `targetId ==` (taunts at you) and where `habitId ==` (a habit's leaderboard)
 
-Firestore indexes these automatically, so **no composite indexes are needed**. Transactions are used for sign-up, check-ins and settlement.
+Firestore indexes these automatically, so **no composite indexes are needed**. Transactions are used for sign-up, check-ins, settlement and taunts.
 
 ### Security
 
@@ -143,9 +158,9 @@ Firestore indexes these automatically, so **no composite indexes are needed**. T
 - Login errors never reveal whether the nickname or the password was wrong.
 - The login is kept by Firebase across restarts. Registering never logs the player in. If creating the player account fails, the new login is deleted again.
 
-**Rules.** `firestore.rules` requires a signed-in user for everything. It ties each player account to its login by recomputing the login email from the account's ID, so nobody can create or edit someone else's account. Players can only add or remove themselves as habit members, write their own check-ins, and change only membership fields of a habit. Field lists, ID formats and timestamps are checked, and anything not listed is denied.
+**Rules.** `firestore.rules` requires a signed-in user for everything. It ties each player account to its login by recomputing the login email from the account's ID, so nobody can create or edit someone else's account. Players can only add or remove themselves as habit members, write their own check-ins, and change only membership fields of a habit. Taunts must come from the signed-in player, at another member of the same habit, with emojis from the list; only the taunted player can delete one. Field lists, ID formats and timestamps are checked, and anything not listed is denied.
 
-**Known limits (no server code).** Penalties are applied by whichever member opens the app, so the rules have to let members update each other's habit stats. A signed-in player who calls the Firestore API directly (bypassing the app) could therefore change points in habits they belong to. Any signed-in player can also read habits' tag codes through the API. Closing these gaps needs Cloud Functions to apply check-ins and penalties on the server.
+**Known limits (no server code).** Penalties are applied by whichever member opens the app, so the rules have to let members update each other's habit stats. A signed-in player who calls the Firestore API directly (bypassing the app) could therefore change points in habits they belong to. Any signed-in player can also read habits' tag codes through the API. The rules can't check that a taunt's sender leads the habit or that the target hasn't checked in yet (that needs the penalty calculation), so only the app checks it. Closing these gaps needs Cloud Functions to apply check-ins and penalties on the server.
 
 ### Firebase setup checklist
 1. **Authentication → Sign-in method:** enable **Email/Password**. Leave email link sign-in off.

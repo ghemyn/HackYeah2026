@@ -120,5 +120,40 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    match /taunts/{tauntId} {
+      function habitMemberIds(habitId) {
+        return get(/databases/$(database)/documents/habits/$(habitId)).data.memberIds;
+      }
+
+      allow read: if signedIn();
+
+      // A member taunts another member of the same habit; a newer taunt at the same member replaces the old one.
+      // Only the app checks that the sender leads the habit and that the target hasn't checked in yet: both need
+      // the penalty calculation, which the rules can't do.
+      allow create, update: if hasVerifiedUserId()
+        && request.resource.data.keys().hasOnly(['habitId', 'targetId', 'fromId', 'emojis', 'message', 'date', 'createdAt'])
+        && request.resource.data.fromId == myUserId()
+        && request.resource.data.habitId is string
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId != myUserId()
+        && tauntId == request.resource.data.habitId + ':' + request.resource.data.targetId
+        && request.resource.data.emojis is list
+        && request.resource.data.emojis.size() >= 1
+        && request.resource.data.emojis.size() <= 5
+        && request.resource.data.emojis.toSet().size() == request.resource.data.emojis.size()
+        // Must match TAUNT_EMOJIS in src/game/taunts.ts.
+        && request.resource.data.emojis.toSet().hasOnly(['😏', '🫵', '😂', '🤡', '👀', '🙄', '🥱', '😴', '💤', '🐌', '🐢', '🦥', '⏰', '🍿', '👑', '🏆'])
+        // The app allows 100 characters; this also covers counting in bytes.
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 300
+        && request.resource.data.date is string
+        && request.resource.data.date.size() == 10
+        && request.resource.data.createdAt == request.time
+        && habitMemberIds(request.resource.data.habitId).hasAll([myUserId(), request.resource.data.targetId]);
+
+      // Only the taunted member removes a taunt, by checking in or leaving the habit.
+      allow delete: if isPlayer(resource.data.targetId);
+    }
   }
 }

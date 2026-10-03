@@ -174,6 +174,7 @@ onBeforeUnmount(() => {
             · now {{ outcome.result.habitPoints }} pts, #{{ outcome.result.rank }} in this habit · 🔥
             {{ outcome.result.streak }}
           </p>
+          <p v-if="outcome.result.status === 'checked-in' && outcome.result.tauntCancelled">😎 Taunt cancelled!</p>
         </div>
       </template>
       <template v-else-if="outcome.kind === 'joined'">
