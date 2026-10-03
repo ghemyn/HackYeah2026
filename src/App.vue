@@ -1,160 +1,370 @@
-<script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+`<script setup lang="ts">
+import { onBeforeUnmount, ref } from "vue";
+import { Html5QrcodeScanner } from "html5-qrcode";
 
-const greetMsg = ref("");
-const name = ref("");
+type NfcRecord = {
+  recordType: string;
+  data?: ArrayBuffer;
+  mediaType?: string;
+  id?: string;
+};
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
-}
+type NfcMessage = {
+  records: NfcRecord[];
+};
+
+type NfcReaderLike = {
+  scan: () => Promise<void>;
+  cancel?: () => Promise<void>;
+  onreading: ((event: { message: NfcMessage; serialNumber?: string }) => void) | null;
+  onreadingerror: ((event: { error: Error }) => void) | null;
+};
+
+const uuid = ref("");
+const source = ref("Not captured yet");
+const status = ref("Ready to read a UUID");
+const errorMessage = ref("");
+const qrScannerElement = ref<HTMLElement | null>(null);
+
+let qrScanner: Html5QrcodeScanner | null = null;
+let nfcReader: NfcReaderLike | null = null;
+
+const normalizeUuid = (rawValue: string): string => {
+  const trimmed = rawValue.trim().replace(/[{}]/g, "");
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)) {
+    throw new Error("This scan does not contain a valid UUID string.");
+  }
+
+  return trimmed.toLowerCase();
+};
+
+const stopQrScanner = () => {
+  if (!qrScanner) {
+    return;
+  }
+
+  qrScanner.clear().catch(() => undefined);
+  qrScanner = null;
+
+  if (qrScannerElement.value) {
+    qrScannerElement.value.innerHTML = "";
+  }
+};
+
+const handleCapturedUuid = (value: string, origin: "QR code" | "NFC tag") => {
+  try {
+    const nextUuid = normalizeUuid(value);
+    uuid.value = nextUuid;
+    source.value = origin;
+    status.value = `UUID captured from ${origin}.`;
+    errorMessage.value = "";
+    stopQrScanner();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "A valid UUID could not be read.";
+    errorMessage.value = message;
+    status.value = `${origin} scan did not return a valid UUID.`;
+  }
+};
+
+const readNfcPayload = (records: NfcRecord[]): string => {
+  for (const record of records) {
+    if (!record.data) {
+      continue;
+    }
+
+    const decoded = new TextDecoder().decode(record.data);
+    const cleaned = decoded.trim();
+
+    if (cleaned) {
+      return cleaned;
+    }
+  }
+
+  return "";
+};
+
+const startQrScan = () => {
+  errorMessage.value = "";
+  stopQrScanner();
+
+  if (!qrScannerElement.value) {
+    errorMessage.value = "The camera container is not ready yet.";
+    return;
+  }
+
+  status.value = "Opening camera. Point it at a QR code...";
+
+  qrScanner = new Html5QrcodeScanner(
+    "qr-reader",
+    {
+      fps: 10,
+      qrbox: { width: 260, height: 260 },
+      aspectRatio: 1,
+    },
+    false,
+  );
+
+  qrScanner.render(
+    (decodedText) => {
+      handleCapturedUuid(decodedText, "QR code");
+    },
+    () => {
+      // Ignore scan errors while the camera keeps looking for a valid QR code.
+    },
+  );
+};
+
+const stopNfcScan = async () => {
+  if (!nfcReader) {
+    return;
+  }
+
+  if (typeof nfcReader.cancel === "function") {
+    await nfcReader.cancel();
+  }
+
+  nfcReader = null;
+};
+
+const startNfcScan = async () => {
+  const NDEFReaderCtor = (
+    window as Window & {
+      NDEFReader?: new () => NfcReaderLike;
+    }
+  ).NDEFReader;
+
+  if (!NDEFReaderCtor) {
+    errorMessage.value = "Web NFC is not supported in this browser or device. Enable NFC in the phone browser and try again.";
+    status.value = "NFC unavailable";
+    return;
+  }
+
+  try {
+    errorMessage.value = "";
+    status.value = "Waiting for an NFC tag...";
+
+    const reader = new NDEFReaderCtor();
+    nfcReader = reader;
+
+    await reader.scan();
+
+    reader.onreading = ({ message, serialNumber }) => {
+      const discoveredValue = readNfcPayload(message.records) || serialNumber || "";
+
+      if (discoveredValue) {
+        handleCapturedUuid(discoveredValue, "NFC tag");
+      } else {
+        errorMessage.value = "The tag was read, but no UUID text was found in its payload.";
+        status.value = "NFC tag read without UUID";
+      }
+    };
+
+    reader.onreadingerror = () => {
+      errorMessage.value = "The NFC tag could not be read. Please move it closer and try again.";
+      status.value = "NFC read failed";
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "NFC scanning is not available on this device.";
+    errorMessage.value = message;
+    status.value = "NFC unavailable";
+  }
+};
+
+onBeforeUnmount(async () => {
+  stopQrScanner();
+  await stopNfcScan();
+});
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <main class="app-shell">
+    <section class="panel">
+      <div class="header">
+        <p class="eyebrow">UUID reader</p>
+        <h1>Scan a unique identifier</h1>
+      </div>
 
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+      <div class="actions">
+        <button type="button" class="primary" @click="startQrScan">Scan QR code</button>
+        <button type="button" class="secondary" @click="startNfcScan">Scan NFC tag</button>
+      </div>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
+      <div class="status-row">
+        <span class="status-pill">{{ status }}</span>
+      </div>
+
+      <div v-if="errorMessage" class="error-box">
+        {{ errorMessage }}
+      </div>
+
+      <div id="qr-reader" ref="qrScannerElement" class="scanner-box" aria-live="polite"></div>
+
+      <div class="uuid-card">
+        <label>Captured UUID</label>
+        <div class="uuid-value">{{ uuid || "No UUID captured yet" }}</div>
+        <small>Source: {{ source }}</small>
+      </div>
+    </section>
   </main>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
-<style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
+:global(body) {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f172a 0%, #111827 100%);
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: #e2e8f0;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+* {
+  box-sizing: border-box;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+button {
+  font: inherit;
 }
 
-.row {
-  display: flex;
-  justify-content: center;
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+.panel {
+  width: min(100%, 720px);
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
+  padding: 24px;
 }
 
-a:hover {
-  color: #535bf2;
+.header {
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: #60a5fa;
 }
 
 h1 {
-  text-align: center;
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.1;
 }
 
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
 }
 
 button {
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.2rem;
+  font-weight: 700;
   cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+  transform: translateY(-1px);
 }
 
-input,
-button {
-  outline: none;
+.primary {
+  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
+  color: white;
 }
 
-#greet-input {
-  margin-right: 5px;
+.secondary {
+  background: rgba(148, 163, 184, 0.14);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+.status-row {
+  margin-bottom: 14px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: #bae6fd;
+  font-size: 0.88rem;
+}
+
+.error-box {
+  margin-bottom: 16px;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+}
+
+.scanner-box {
+  width: 100%;
+  min-height: 260px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  margin-bottom: 18px;
+}
+
+.uuid-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(15, 118, 110, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+}
+
+.uuid-card label {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #99f6e4;
+}
+
+.uuid-value {
+  word-break: break-all;
+  font-size: clamp(1.1rem, 2vw, 1.8rem);
+  font-weight: 700;
+  color: white;
+}
+
+.uuid-card small {
+  color: #cbd5e1;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: 18px;
   }
 
-  a:hover {
-    color: #24c8db;
+  .actions {
+    flex-direction: column;
   }
 
-  input,
   button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
+    width: 100%;
   }
 }
-
 </style>
+`
