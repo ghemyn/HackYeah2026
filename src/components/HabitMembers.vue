@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { MAX_TIMES_PER_WEEK } from "../game/catalog";
 import type { Habit } from "../db/habits";
 import type { UserProfile } from "../db/users";
-import { habitCountThisWeek, isHabitDoneToday } from "../game/progress";
+import { checkInsOn, periodProgress } from "../game/progress";
 
 // Shows how the viewer's friends are doing in a shared habit. Other members are only counted.
 const props = defineProps<{
@@ -14,8 +13,6 @@ const props = defineProps<{
   today: string;
 }>();
 
-const weekTarget = computed(() => Math.min(props.habit.timesPerWeek, MAX_TIMES_PER_WEEK));
-
 const friendRows = computed(() =>
   props.friends
     .filter((friend) => props.habit.members[friend.id])
@@ -23,12 +20,12 @@ const friendRows = computed(() =>
       const stats = props.habit.members[friend.id];
       return {
         friend,
-        doneToday: isHabitDoneToday(stats, props.today),
-        weekCount: habitCountThisWeek(stats, props.today),
+        todayCount: checkInsOn(stats, props.today),
+        progress: periodProgress(props.habit, stats, props.today),
         lastCheckInDate: stats.lastCheckInDate,
       };
     })
-    .sort((a, b) => Number(b.doneToday) - Number(a.doneToday) || b.weekCount - a.weekCount),
+    .sort((a, b) => b.todayCount - a.todayCount || b.progress.count - a.progress.count),
 );
 
 const otherCount = computed(
@@ -39,12 +36,14 @@ const otherCount = computed(
 <template>
   <div v-if="friendRows.length > 0 || otherCount > 0" class="habit-members">
     <ul>
-      <li v-for="row in friendRows" :key="row.friend.id" :class="{ done: row.doneToday }">
+      <li v-for="row in friendRows" :key="row.friend.id" :class="{ done: row.todayCount > 0 }">
         <span aria-hidden="true">{{ row.friend.avatar }}</span>
         <strong>{{ row.friend.nickname }}</strong>
         <small>
-          {{ row.doneToday ? "✓ today" : row.lastCheckInDate ? `last ${row.lastCheckInDate}` : "not yet" }}
-          · {{ row.weekCount }}/{{ weekTarget }} this week
+          <template v-if="row.todayCount > 1">✓ {{ row.todayCount }}× today</template>
+          <template v-else-if="row.todayCount === 1">✓ today</template>
+          <template v-else>{{ row.lastCheckInDate ? `last ${row.lastCheckInDate}` : "not yet" }}</template>
+          · {{ row.progress.count }}/{{ row.progress.target }} {{ row.progress.label }}
         </small>
       </li>
     </ul>

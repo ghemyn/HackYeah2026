@@ -13,21 +13,26 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { generateUuid, todayKey, type DateKey } from "../common";
-import { DEFAULT_HABIT_ICON, MAX_TIMES_PER_WEEK } from "../game/catalog";
+import { DEFAULT_HABIT_ICON } from "../game/catalog";
+import { toSchedule, type HabitSchedule } from "../game/schedule";
 import { COLLECTIONS, db, readNumber, readOptionalString, readString } from "./firebase";
 
 // One member's progress in a shared habit. Points live here: each habit has its own leaderboard.
 export type HabitMemberStats = {
   joinedDate: DateKey;
   lastCheckInDate: DateKey | null;
-  // Check-ins during the week starting on `weekStart`.
-  weekStart: DateKey | null;
-  weekCount: number;
+  // Check-ins on `lastCheckInDate` (habits can allow several a day).
+  lastDateCount: number;
+  // Check-ins in the cycle (or week, for weekday schedules) starting on `periodStart`.
+  periodStart: DateKey | null;
+  periodCount: number;
   totalCheckIns: number;
   // This member's points in this habit's leaderboard.
   points: number;
   // Check-ins since the last penalty in this habit.
   streak: number;
+  // Misses since the last check-in; the Lazy Snail badge comes at 3.
+  missedInRow: number;
   // Last day whose missed check-ins are already charged (see settleMember in game/progress.ts).
   settledThrough: DateKey;
 };
@@ -39,10 +44,10 @@ export type Habit = {
   creatorId: string;
   name: string;
   icon: string;
-  // 7 means every day.
-  timesPerWeek: number;
+  schedule: HabitSchedule;
   // Secret code written into the habit's QR code and NFC sticker.
   tagCode: string;
+  // Interval cycles ("X times every Y days") start on this day.
   createdDate: DateKey;
   // Used to query a player's habits; always has the same users as `members`.
   memberIds: string[];
@@ -52,7 +57,7 @@ export type Habit = {
 export type NewHabit = {
   name: string;
   icon: string;
-  timesPerWeek: number;
+  schedule: HabitSchedule;
 };
 
 // Firestore allows at most 30 values in an "array-contains-any" filter.
@@ -63,11 +68,13 @@ export const habitRef = (habitId: string) => doc(db, COLLECTIONS.habits, habitId
 export const newMemberStats = (today: DateKey): HabitMemberStats => ({
   joinedDate: today,
   lastCheckInDate: null,
-  weekStart: null,
-  weekCount: 0,
+  lastDateCount: 0,
+  periodStart: null,
+  periodCount: 0,
   totalCheckIns: 0,
   points: 0,
   streak: 0,
+  missedInRow: 0,
   settledThrough: today,
 });
 
@@ -77,11 +84,13 @@ const toMemberStats = (value: unknown, fallbackDate: DateKey): HabitMemberStats 
   return {
     joinedDate: readString(data.joinedDate, fallbackDate),
     lastCheckInDate: readOptionalString(data.lastCheckInDate),
-    weekStart: readOptionalString(data.weekStart),
-    weekCount: readNumber(data.weekCount),
+    lastDateCount: readNumber(data.lastDateCount),
+    periodStart: readOptionalString(data.periodStart),
+    periodCount: readNumber(data.periodCount),
     totalCheckIns: readNumber(data.totalCheckIns),
     points: readNumber(data.points),
     streak: readNumber(data.streak),
+    missedInRow: readNumber(data.missedInRow),
     settledThrough: readString(data.settledThrough, fallbackDate),
   };
 };
@@ -103,7 +112,7 @@ export const toHabit = (id: string, data: DocumentData): Habit => {
     creatorId: readString(data.creatorId),
     name: readString(data.name, "Habit"),
     icon: readString(data.icon, DEFAULT_HABIT_ICON),
-    timesPerWeek: readNumber(data.timesPerWeek, MAX_TIMES_PER_WEEK),
+    schedule: toSchedule(data.schedule, data.timesPerWeek),
     tagCode: readString(data.tagCode),
     createdDate,
     memberIds,
@@ -135,7 +144,7 @@ export const createHabit = async (userId: string, habit: NewHabit): Promise<void
     creatorId: userId,
     name: habit.name,
     icon: habit.icon,
-    timesPerWeek: habit.timesPerWeek,
+    schedule: habit.schedule,
     tagCode: generateUuid(),
     createdDate: today,
     ...membershipData({ [userId]: newMemberStats(today) }),
@@ -143,7 +152,8 @@ export const createHabit = async (userId: string, habit: NewHabit): Promise<void
   });
 };
 
-export const joinHabit = (userId: string, habitId: string): Promise<void> =>
+// Adds the player to the habit. Resolves to false if they were already a member.
+export const joinHabit = (userId: string, habitId: string): Promise<boolean> =>
   runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(habitRef(habitId));
 
@@ -154,10 +164,11 @@ export const joinHabit = (userId: string, habitId: string): Promise<void> =>
     const habit = toHabit(snapshot.id, snapshot.data());
 
     if (isHabitMember(habit, userId)) {
-      return;
+      return false;
     }
 
     transaction.update(snapshot.ref, membershipData({ ...habit.members, [userId]: newMemberStats(todayKey()) }));
+    return true;
   });
 
 // Removes the player and their points from the habit. The last member to leave deletes it, which also retires its tag.

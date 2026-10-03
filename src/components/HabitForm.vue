@@ -2,8 +2,10 @@
 import { computed, ref } from "vue";
 import { toErrorMessage } from "../common";
 import { createHabit } from "../db/habits";
-import { DEFAULT_HABIT_ICON, FREQUENCY_OPTIONS, HABIT_ICONS, frequencyLabel } from "../game/catalog";
+import { DEFAULT_HABIT_ICON, HABIT_ICONS } from "../game/catalog";
+import { DAILY_SCHEDULE, validateSchedule, type HabitSchedule } from "../game/schedule";
 import EmojiPicker from "./EmojiPicker.vue";
+import SchedulePicker from "./SchedulePicker.vue";
 
 const props = defineProps<{
   userId: string;
@@ -17,24 +19,25 @@ const MAX_NAME_LENGTH = 40;
 
 const name = ref("");
 const icon = ref(DEFAULT_HABIT_ICON);
-const timesPerWeek = ref(FREQUENCY_OPTIONS[0]);
+const schedule = ref<HabitSchedule>(DAILY_SCHEDULE);
 const isSaving = ref(false);
 const errorMessage = ref("");
 
 const trimmedName = computed(() => name.value.trim());
+const scheduleError = computed(() => validateSchedule(schedule.value));
 
 const submit = async () => {
-  if (!trimmedName.value || isSaving.value) {
+  if (!trimmedName.value || scheduleError.value || isSaving.value) {
     return;
   }
 
   try {
     isSaving.value = true;
     errorMessage.value = "";
-    await createHabit(props.userId, { name: trimmedName.value, icon: icon.value, timesPerWeek: timesPerWeek.value });
+    await createHabit(props.userId, { name: trimmedName.value, icon: icon.value, schedule: schedule.value });
     name.value = "";
     icon.value = DEFAULT_HABIT_ICON;
-    timesPerWeek.value = FREQUENCY_OPTIONS[0];
+    schedule.value = DAILY_SCHEDULE;
     emit("created");
   } catch (error) {
     errorMessage.value = toErrorMessage(error, "The habit could not be created.");
@@ -56,17 +59,15 @@ const submit = async () => {
       <EmojiPicker v-model="icon" :options="HABIT_ICONS" label="Habit icon" />
     </div>
 
-    <label class="field">
-      <span>How often</span>
-      <select v-model.number="timesPerWeek">
-        <option v-for="option in FREQUENCY_OPTIONS" :key="option" :value="option">{{ frequencyLabel(option) }}</option>
-      </select>
-    </label>
+    <div class="field">
+      <span>Repeats</span>
+      <SchedulePicker v-model="schedule" />
+    </div>
 
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
     <div class="actions">
-      <button type="submit" class="primary" :disabled="!trimmedName || isSaving">
+      <button type="submit" class="primary" :disabled="!trimmedName || !!scheduleError || isSaving">
         {{ isSaving ? "Creating..." : "Create habit" }}
       </button>
     </div>

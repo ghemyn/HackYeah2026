@@ -6,15 +6,14 @@ export const POINTS = {
   checkIn: 10,
   // Added every time a member's streak in a habit reaches a multiple of STREAK_BONUS_EVERY_CHECK_INS.
   streakBonus: 50,
-  // Daily habits: for every day without a check-in.
-  // Other habits: for every check-in short of the weekly target, charged when the week ends.
+  // For every miss: a scheduled weekday without a check-in, or a check-in short of the target
+  // when an "X times every Y days" cycle ends.
   missed: -5,
-  // Extra penalty with the Lazy Snail badge: on the LAZY_SNAIL_AFTER_MISSED_DAYS-th missed day in a row
-  // of a daily habit, or for a whole week without any check-in in other habits.
+  // Extra penalty with the Lazy Snail badge when misses in a row reach LAZY_SNAIL_AFTER_MISSES.
   lazySnail: -15,
 } as const;
 
 // A streak counts check-ins since the last penalty in that habit.
 export const STREAK_BONUS_EVERY_CHECK_INS = 7;
 
-export const LAZY_SNAIL_AFTER_MISSED_DAYS = 3;
+export const LAZY_SNAIL_AFTER_MISSES = 3;

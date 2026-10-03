@@ -3,8 +3,15 @@ import { computed, ref } from "vue";
 import { toErrorMessage } from "../common";
 import { leaveHabit, memberStats, type Habit } from "../db/habits";
 import type { UserProfile } from "../db/users";
-import { MAX_TIMES_PER_WEEK, frequencyLabel } from "../game/catalog";
-import { habitCountThisWeek, habitStandings, isHabitDoneToday } from "../game/progress";
+import {
+  checkInBlocker,
+  describeDay,
+  habitStandings,
+  isHabitDoneToday,
+  nextCheckInDay,
+  periodProgress,
+} from "../game/progress";
+import { scheduleLabel } from "../game/schedule";
 import { navigate } from "../navigation";
 import { isNfcSupported, writeNfcText } from "../scanners/nfcScanner";
 import HabitLeaderboard from "./HabitLeaderboard.vue";
@@ -21,16 +28,17 @@ const props = defineProps<{
 
 const isBusy = ref(false);
 const showTag = ref(false);
-const showLeaderboard = ref(false);
+const showLeaderboard = ref(true);
 const message = ref("");
 const errorMessage = ref("");
 const canWriteNfc = isNfcSupported();
 
 const myStats = computed(() => memberStats(props.habit, props.userId, props.today));
 const doneToday = computed(() => isHabitDoneToday(myStats.value, props.today));
-const weekCount = computed(() => habitCountThisWeek(myStats.value, props.today));
+const progress = computed(() => periodProgress(props.habit, myStats.value, props.today));
+const canCheckInToday = computed(() => !checkInBlocker(props.habit, myStats.value, props.today));
+const nextDay = computed(() => nextCheckInDay(props.habit, myStats.value, props.today));
 const isLastMember = computed(() => props.habit.memberIds.every((memberId) => memberId === props.userId));
-const weekTarget = computed(() => Math.min(props.habit.timesPerWeek, MAX_TIMES_PER_WEEK));
 const standings = computed(() => habitStandings(props.habit, props.today));
 const myStanding = computed(() => standings.value.find((standing) => standing.userId === props.userId));
 const friendIds = computed(() => props.friends.map((friend) => friend.id));
@@ -77,12 +85,19 @@ const leave = () => {
 
       <div class="habit-text">
         <strong>{{ habit.name }}</strong>
-        <small>{{ frequencyLabel(habit.timesPerWeek) }} · {{ weekCount }}/{{ weekTarget }} this week</small>
+        <small>
+          {{ scheduleLabel(habit.schedule) }} · {{ progress.count }}/{{ progress.target }} {{ progress.label }}
+        </small>
       </div>
 
-      <span v-if="doneToday" class="done-label">Done today ✓</span>
       <!-- Opens the scanner only; checking in requires scanning this habit's QR code or NFC tag. -->
-      <button v-else type="button" class="primary check-in" @click="navigate('scan')">Scan to check in</button>
+      <button v-if="canCheckInToday" type="button" class="primary check-in" @click="navigate('scan')">
+        Scan to check in
+      </button>
+      <span v-else class="status-label" :class="{ done: doneToday }">
+        {{ doneToday ? "Done today ✓" : "Not due today" }}
+        <small v-if="nextDay">Next: {{ describeDay(nextDay, today) }}</small>
+      </span>
     </div>
 
     <p v-if="myStanding" class="standing">
@@ -110,8 +125,8 @@ const leave = () => {
 
     <div v-if="showTag" class="habit-tag">
       <p class="hint">
-        Print this QR code or write it to an NFC sticker. Scanning it is the only way to check in, and anyone who
-        scans it joins this habit.
+        Print this QR code or write it to an NFC sticker. Scanning it is the only way to check in. Someone scanning
+        it for the first time only adds the habit to their account; later scans check them in.
       </p>
       <QrCodeCard :value="habit.tagCode" :caption="`${habit.icon} ${habit.name}`">
         <template #actions>
@@ -167,10 +182,22 @@ const leave = () => {
   color: #94a3b8;
 }
 
-.done-label {
+.status-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   font-weight: 700;
-  color: #86efac;
+  color: #cbd5e1;
   white-space: nowrap;
+}
+
+.status-label.done {
+  color: #86efac;
+}
+
+.status-label small {
+  font-weight: 400;
+  color: #94a3b8;
 }
 
 .standing {

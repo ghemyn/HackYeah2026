@@ -9,7 +9,7 @@ import { updateAvatar } from "../db/users";
 import { BADGES } from "../game/badges";
 import { AVATARS, DEFAULT_AVATAR } from "../game/catalog";
 import { habitStandings } from "../game/progress";
-import { LAZY_SNAIL_AFTER_MISSED_DAYS, POINTS, STREAK_BONUS_EVERY_CHECK_INS } from "../game/rules";
+import { LAZY_SNAIL_AFTER_MISSES, POINTS, STREAK_BONUS_EVERY_CHECK_INS } from "../game/rules";
 import { profile, requireUserId } from "../session";
 
 const userId = requireUserId();
@@ -83,10 +83,9 @@ const totalCheckIns = computed(() =>
 const rules = [
   { action: "Check in by scanning the habit's QR or NFC tag", points: POINTS.checkIn },
   { action: `${STREAK_BONUS_EVERY_CHECK_INS} check-ins in a row without a penalty 🔥`, points: POINTS.streakBonus },
-  { action: "Daily habit: each missed day (streak resets)", points: POINTS.missed },
-  { action: `Daily habit: ${LAZY_SNAIL_AFTER_MISSED_DAYS} missed days in a row 🐌 (extra)`, points: POINTS.lazySnail },
-  { action: "Weekly habit: each check-in short of the target", points: POINTS.missed },
-  { action: "Weekly habit: a whole week without check-ins 🐌 (extra)", points: POINTS.lazySnail },
+  { action: "Each scheduled weekday missed (streak resets)", points: POINTS.missed },
+  { action: '"X times every Y days": each check-in short when a cycle ends', points: POINTS.missed },
+  { action: `${LAZY_SNAIL_AFTER_MISSES} misses in a row 🐌 (extra)`, points: POINTS.lazySnail },
 ];
 
 const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}`);

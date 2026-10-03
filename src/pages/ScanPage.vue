@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from "vue";
 import { toErrorMessage } from "../common";
 import { checkIn, type CheckInMethod, type CheckInResult } from "../db/checkins";
 import { addFriend } from "../db/friends";
-import { findHabitByTagCode } from "../db/habits";
+import { findHabitByTagCode, isHabitMember, joinHabit, type Habit } from "../db/habits";
 import type { UserProfile } from "../db/users";
 import { NfcScanner } from "../scanners/nfcScanner";
 import { parseScanPayload } from "../scanners/payload";
@@ -12,13 +12,14 @@ import { requireUserId } from "../session";
 
 type ScanOutcome =
   | { kind: "check-in"; result: CheckInResult }
+  | { kind: "joined"; habit: Habit }
   | { kind: "friend"; friend: UserProfile; alreadyFriends: boolean };
 
 const QR_READER_ID = "qr-reader";
 
 const userId = requireUserId();
 
-const status = ref("Scan a habit tag to check in (or join it), or a friend's code to add them.");
+const status = ref("Scan a habit tag to check in (the first scan adds the habit), or a friend's code to add them.");
 const errorMessage = ref("");
 const outcome = ref<ScanOutcome | null>(null);
 const isBusy = ref(false);
@@ -57,9 +58,12 @@ const processScan = async (rawValue: string, source: CheckInMethod) => {
         throw new Error("No habit uses this tag. It may have been deleted.");
       }
 
-      // Scanning a habit you haven't joined yet joins it and checks you in.
-
-      outcome.value = { kind: "check-in", result: await checkIn(userId, habit.id, source) };
+      // The first scan of a habit only adds it to the account; later scans check in.
+      if (!isHabitMember(habit, userId) && (await joinHabit(userId, habit.id))) {
+        outcome.value = { kind: "joined", habit };
+      } else {
+        outcome.value = { kind: "check-in", result: await checkIn(userId, habit.id, source) };
+      }
     } else {
       throw new Error("This is not a HabitRivals habit tag or friend code.");
     }
@@ -157,14 +161,20 @@ onBeforeUnmount(() => {
         <span class="outcome-icon">{{ outcome.result.habit.icon }}</span>
         <div>
           <strong>{{ outcome.result.habit.name }}</strong>
-          <p v-if="outcome.result.joined">You joined this habit!</p>
-          <p v-if="outcome.result.status === 'already-done'">Already checked in today.</p>
+          <p v-if="outcome.result.status === 'already-done'">You've done all of today's check-ins for this habit.</p>
           <p v-else>
             Checked in! +{{ outcome.result.points }} points
             <template v-if="outcome.result.streakBonus"> (🔥 streak bonus!)</template>
             · now {{ outcome.result.habitPoints }} pts, #{{ outcome.result.rank }} in this habit · 🔥
             {{ outcome.result.streak }}
           </p>
+        </div>
+      </template>
+      <template v-else-if="outcome.kind === 'joined'">
+        <span class="outcome-icon">{{ outcome.habit.icon }}</span>
+        <div>
+          <strong>{{ outcome.habit.name }}</strong>
+          <p>Added to your habits! Scan this tag again whenever you do it to check in and earn points.</p>
         </div>
       </template>
       <template v-else>

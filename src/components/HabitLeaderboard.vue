@@ -42,7 +42,8 @@ const leaderId = computed(() => {
           <template v-else-if="friendIds.includes(row.userId)"> · friend</template>
         </strong>
         <small>
-          {{ row.doneToday ? "✓ today" : "not today" }} · 🔥 {{ row.streak }}
+          {{ row.todayCount === 0 ? "not today" : row.todayCount === 1 ? "✓ today" : `✓ ${row.todayCount}× today` }}
+          · 🔥 {{ row.streak }}
           <template v-if="row.lazySnail"> · 🐌 Lazy Snail</template>
         </small>
       </div>

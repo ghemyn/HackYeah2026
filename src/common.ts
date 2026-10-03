@@ -62,3 +62,10 @@ export const weekStartKey = (key: DateKey): DateKey => {
 };
 
 export const laterDateKey = (a: DateKey, b: DateKey): DateKey => (a > b ? a : b);
+
+// 0 = Monday ... 6 = Sunday.
+export const dayOfWeek = (key: DateKey): number => (fromDateKey(key).getDay() + 6) % 7;
+
+// e.g. "Oct 9", in the viewer's language.
+export const formatShortDate = (key: DateKey): string =>
+  fromDateKey(key).toLocaleDateString(undefined, { month: "short", day: "numeric" });

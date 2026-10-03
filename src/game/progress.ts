@@ -1,21 +1,100 @@
 // Pure scoring helpers shared by the database layer and the pages. No Firebase access here.
 // All points belong to a member of a habit (HabitMemberStats), never to the account.
 
-import { addDays, daysBetween, laterDateKey, weekStartKey, type DateKey } from "../common";
+import { addDays, dayOfWeek, formatShortDate, laterDateKey, type DateKey } from "../common";
 import type { Habit, HabitMemberStats } from "../db/habits";
-import { MAX_TIMES_PER_WEEK } from "./catalog";
-import { LAZY_SNAIL_AFTER_MISSED_DAYS, POINTS, STREAK_BONUS_EVERY_CHECK_INS } from "./rules";
+import { LAZY_SNAIL_AFTER_MISSES, POINTS, STREAK_BONUS_EVERY_CHECK_INS } from "./rules";
+import { dailyLimit, isScheduledDay, periodOf, scheduleLabel, WEEKDAY_LABELS, type Period } from "./schedule";
 
-export const isDailyHabit = (timesPerWeek: number): boolean => timesPerWeek >= MAX_TIMES_PER_WEEK;
+// What the scoring needs to know about a habit. Interval cycles start on `createdDate`.
+type HabitRules = Pick<Habit, "schedule" | "createdDate">;
+
+// Check-ins on `day` (only known for the member's last check-in day, which is all that is ever needed).
+export const checkInsOn = (stats: Pick<HabitMemberStats, "lastCheckInDate" | "lastDateCount">, day: DateKey): number =>
+  stats.lastCheckInDate === day ? Math.max(stats.lastDateCount, 1) : 0;
 
 export const isHabitDoneToday = (stats: Pick<HabitMemberStats, "lastCheckInDate">, today: DateKey): boolean =>
   stats.lastCheckInDate === today;
 
-export const habitCountThisWeek = (stats: Pick<HabitMemberStats, "weekStart" | "weekCount">, today: DateKey): number =>
-  stats.weekStart === weekStartKey(today) ? stats.weekCount : 0;
+// Whether the member has used up the habit's check-ins for `day`.
+export const isDailyLimitReached = (habit: HabitRules, stats: HabitMemberStats, day: DateKey): boolean =>
+  checkInsOn(stats, day) >= dailyLimit(habit.schedule);
 
-const countInWeek = (stats: Pick<HabitMemberStats, "weekStart" | "weekCount">, weekStart: DateKey): number =>
-  stats.weekStart === weekStart ? stats.weekCount : 0;
+// Check-ins in `period`. A last check-in inside the period always counts, even if the stored count is
+// missing or refers to another period (e.g. data written before periods existed).
+const countInPeriod = (
+  stats: Pick<HabitMemberStats, "periodStart" | "periodCount" | "lastCheckInDate">,
+  period: Period,
+): number => {
+  const stored = stats.periodStart === period.start ? stats.periodCount : 0;
+  const lastInPeriod =
+    stats.lastCheckInDate !== null && stats.lastCheckInDate >= period.start && stats.lastCheckInDate <= period.end;
+  return Math.max(stored, lastInPeriod ? 1 : 0);
+};
+
+export type PeriodProgress = {
+  count: number;
+  target: number;
+  // e.g. "today", "this week", "until Oct 9".
+  label: string;
+};
+
+export const periodProgress = (habit: HabitRules, stats: HabitMemberStats, today: DateKey): PeriodProgress => {
+  const period = periodOf(habit.schedule, habit.createdDate, today);
+  let label = `until ${formatShortDate(period.end)}`;
+
+  if (habit.schedule.type === "weekdays") {
+    label = "this week";
+  } else if (habit.schedule.days === 1) {
+    label = "today";
+  }
+
+  return { count: countInPeriod(stats, period), target: period.target, label };
+};
+
+// Why the member cannot check in on `day`, or "" if they can.
+export const checkInBlocker = (habit: HabitRules, stats: HabitMemberStats, day: DateKey): string => {
+  if (isDailyLimitReached(habit, stats, day)) {
+    const limit = dailyLimit(habit.schedule);
+    return limit === 1 ? "Already checked in today." : `Already checked in ${limit}× today, the most for one day.`;
+  }
+
+  if (!isScheduledDay(habit.schedule, day)) {
+    return `Today isn't scheduled for this habit (${scheduleLabel(habit.schedule)}).`;
+  }
+
+  const period = periodOf(habit.schedule, habit.createdDate, day);
+
+  if (countInPeriod(stats, period) >= period.target) {
+    return `Target reached for this cycle. The next one starts ${formatShortDate(addDays(period.end, 1))}.`;
+  }
+
+  return "";
+};
+
+// The next day (from today on) the member can check in. Looks ahead one cycle plus a week at most.
+export const nextCheckInDay = (habit: HabitRules, stats: HabitMemberStats, today: DateKey): DateKey | null => {
+  const limit = habit.schedule.type === "interval" ? habit.schedule.days + 7 : 7;
+
+  for (let offset = 0; offset <= limit; offset++) {
+    const day = addDays(today, offset);
+
+    if (!checkInBlocker(habit, stats, day)) {
+      return day;
+    }
+  }
+
+  return null;
+};
+
+// "today", "tomorrow" or e.g. "Wed Oct 8".
+export const describeDay = (day: DateKey, today: DateKey): string => {
+  if (day === today) {
+    return "today";
+  }
+
+  return day === addDays(today, 1) ? "tomorrow" : `${WEEKDAY_LABELS[dayOfWeek(day)]} ${formatShortDate(day)}`;
+};
 
 export type Settlement = {
   // The member's stats with all penalties due before today applied.
@@ -26,43 +105,54 @@ export type Settlement = {
   lazySnailDays: DateKey[];
 };
 
-// Applies the penalties a member owes for days (daily habits) or whole weeks (other habits) that ended
-// before today and were not charged yet. Idempotent: settling the result again changes nothing.
-export const settleMember = (stats: HabitMemberStats, timesPerWeek: number, today: DateKey): Settlement => {
+// Charges the member for every scheduled day (weekday schedules) or finished cycle (interval schedules)
+// that ended before today without enough check-ins. Nothing up to the day of joining is charged.
+// Idempotent: settling the result again changes nothing.
+export const settleMember = (habit: HabitRules, stats: HabitMemberStats, today: DateKey): Settlement => {
   const yesterday = addDays(today, -1);
+  const alreadySettled = laterDateKey(stats.settledThrough, stats.joinedDate);
   let penalty = 0;
+  let missedInRow = stats.missedInRow;
   let settledThrough = stats.settledThrough;
   const lazySnailDays: DateKey[] = [];
 
-  if (isDailyHabit(timesPerWeek)) {
-    // Missed days are counted from the last check-in, or from joining if there was none.
-    const lastActive = stats.lastCheckInDate ?? stats.joinedDate;
+  const miss = (count: number, day: DateKey) => {
+    const before = missedInRow;
+    penalty += count * POINTS.missed;
+    missedInRow += count;
 
-    for (let day = addDays(laterDateKey(stats.settledThrough, lastActive), 1); day <= yesterday; day = addDays(day, 1)) {
-      penalty += POINTS.missed;
+    if (before < LAZY_SNAIL_AFTER_MISSES && missedInRow >= LAZY_SNAIL_AFTER_MISSES) {
+      penalty += POINTS.lazySnail;
+      lazySnailDays.push(day);
+    }
+  };
 
-      if (daysBetween(lastActive, day) === LAZY_SNAIL_AFTER_MISSED_DAYS) {
-        penalty += POINTS.lazySnail;
-        lazySnailDays.push(day);
+  if (habit.schedule.type === "weekdays") {
+    // Every check-in settles first, so the only check-in after `settledThrough` can be `lastCheckInDate`.
+    for (let day = addDays(alreadySettled, 1); day <= yesterday; day = addDays(day, 1)) {
+      if (isScheduledDay(habit.schedule, day) && stats.lastCheckInDate !== day) {
+        miss(1, day);
       }
 
       settledThrough = day;
     }
   } else {
-    // Weeks are charged once they are over. The week of joining is never charged.
-    const lastFinishedWeek = addDays(weekStartKey(today), -7);
-    const firstWeek = addDays(weekStartKey(laterDateKey(stats.settledThrough, stats.joinedDate)), 7);
+    // Only cycles starting after the last settled day are charged, so the cycle a member joins in is free.
+    let period = periodOf(habit.schedule, habit.createdDate, addDays(alreadySettled, 1));
 
-    for (let week = firstWeek; week <= lastFinishedWeek; week = addDays(week, 7)) {
-      const count = countInWeek(stats, week);
-      penalty += Math.max(timesPerWeek - count, 0) * POINTS.missed;
+    if (period.start <= alreadySettled) {
+      period = periodOf(habit.schedule, habit.createdDate, addDays(period.end, 1));
+    }
 
-      if (count === 0) {
-        penalty += POINTS.lazySnail;
-        lazySnailDays.push(addDays(week, 6));
+    while (period.end <= yesterday) {
+      const shortfall = Math.max(period.target - countInPeriod(stats, period), 0);
+
+      if (shortfall > 0) {
+        miss(shortfall, period.end);
       }
 
-      settledThrough = addDays(week, 6);
+      settledThrough = period.end;
+      period = periodOf(habit.schedule, habit.createdDate, addDays(period.end, 1));
     }
   }
 
@@ -71,6 +161,7 @@ export const settleMember = (stats: HabitMemberStats, timesPerWeek: number, toda
       ...stats,
       points: stats.points + penalty,
       streak: penalty < 0 ? 0 : stats.streak,
+      missedInRow,
       settledThrough,
     },
     penalty,
@@ -85,8 +176,9 @@ export type CheckInOutcome = {
   streakBonus: boolean;
 };
 
-// Adds today's check-in to already settled stats.
-export const applyCheckIn = (stats: HabitMemberStats, today: DateKey): CheckInOutcome => {
+// Adds today's check-in to already settled stats. Call checkInBlocker first.
+export const applyCheckIn = (habit: HabitRules, stats: HabitMemberStats, today: DateKey): CheckInOutcome => {
+  const period = periodOf(habit.schedule, habit.createdDate, today);
   const streak = stats.streak + 1;
   const streakBonus = streak % STREAK_BONUS_EVERY_CHECK_INS === 0;
   const points = POINTS.checkIn + (streakBonus ? POINTS.streakBonus : 0);
@@ -95,58 +187,48 @@ export const applyCheckIn = (stats: HabitMemberStats, today: DateKey): CheckInOu
     stats: {
       ...stats,
       lastCheckInDate: today,
-      weekStart: weekStartKey(today),
-      weekCount: habitCountThisWeek(stats, today) + 1,
+      lastDateCount: checkInsOn(stats, today) + 1,
+      periodStart: period.start,
+      periodCount: countInPeriod(stats, period) + 1,
       totalCheckIns: stats.totalCheckIns + 1,
       points: stats.points + points,
       streak,
+      missedInRow: 0,
     },
     points,
     streakBonus,
   };
 };
 
-// Whether a member is currently slacking: 3+ missed days in a row (daily habits),
-// or no check-in at all in the last full week since joining (other habits).
-export const isLazySnail = (stats: HabitMemberStats, timesPerWeek: number, today: DateKey): boolean => {
-  if (isDailyHabit(timesPerWeek)) {
-    const lastActive = stats.lastCheckInDate ?? stats.joinedDate;
-    return daysBetween(lastActive, today) - 1 >= LAZY_SNAIL_AFTER_MISSED_DAYS;
-  }
-
-  const lastFinishedWeek = addDays(weekStartKey(today), -7);
-  const firstChargeableWeek = addDays(weekStartKey(stats.joinedDate), 7);
-  return lastFinishedWeek >= firstChargeableWeek && countInWeek(stats, lastFinishedWeek) === 0;
-};
-
 export type Standing = {
   userId: string;
   rank: number;
-  // Includes penalties that are due but not saved yet, so the leaderboard is always fair.
+  // Include penalties that are due but not saved yet, so the leaderboard is always fair.
   points: number;
   streak: number;
-  doneToday: boolean;
+  // Check-ins today.
+  todayCount: number;
   lazySnail: boolean;
 };
 
 // The habit's leaderboard: every member, highest points first. Equal points share a rank.
 export const habitStandings = (
-  habit: Pick<Habit, "memberIds" | "members" | "timesPerWeek">,
+  habit: HabitRules & Pick<Habit, "memberIds" | "members">,
   today: DateKey,
 ): Standing[] => {
   const rows = habit.memberIds
     .filter((userId) => habit.members[userId])
     .map((userId) => {
       const stats = habit.members[userId];
-      const settled = settleMember(stats, habit.timesPerWeek, today).stats;
+      const settled = settleMember(habit, stats, today).stats;
 
       return {
         userId,
         rank: 0,
         points: settled.points,
         streak: settled.streak,
-        doneToday: isHabitDoneToday(stats, today),
-        lazySnail: isLazySnail(stats, habit.timesPerWeek, today),
+        todayCount: checkInsOn(stats, today),
+        lazySnail: settled.missedInRow >= LAZY_SNAIL_AFTER_MISSES,
       };
     })
     .sort((a, b) => b.points - a.points || a.userId.localeCompare(b.userId));
@@ -167,7 +249,7 @@ export type HabitSettlement = {
 
 // Settles every member of a habit, so penalties apply even to members who never open the app.
 export const settleAllMembers = (
-  habit: Pick<Habit, "memberIds" | "members" | "timesPerWeek">,
+  habit: HabitRules & Pick<Habit, "memberIds" | "members">,
   today: DateKey,
 ): HabitSettlement => {
   const members: Record<string, HabitMemberStats> = {};
@@ -181,7 +263,7 @@ export const settleAllMembers = (
       continue;
     }
 
-    const result = settleMember(stats, habit.timesPerWeek, today);
+    const result = settleMember(habit, stats, today);
     members[userId] = result.stats;
     changed = changed || result.stats.settledThrough !== stats.settledThrough;
     lazySnails.push(...result.lazySnailDays.map((date) => ({ userId, date })));

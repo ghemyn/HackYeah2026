@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { toErrorMessage } from "../common";
 import { findHabitsWithMembers, joinHabit, type Habit } from "../db/habits";
 import type { UserProfile } from "../db/users";
-import { frequencyLabel } from "../game/catalog";
+import { scheduleLabel } from "../game/schedule";
 import HabitMembers from "./HabitMembers.vue";
 
 // Habits the viewer's friends are in but the viewer is not, with a button to join.
@@ -78,7 +78,7 @@ const join = async (habit: Habit) => {
           <span class="habit-icon" aria-hidden="true">{{ habit.icon }}</span>
           <div class="row-text">
             <strong>{{ habit.name }}</strong>
-            <small>{{ frequencyLabel(habit.timesPerWeek) }}</small>
+            <small>{{ scheduleLabel(habit.schedule) }}</small>
           </div>
           <button type="button" class="secondary small" :disabled="joiningId !== null" @click="join(habit)">
             {{ joiningId === habit.id ? "Joining..." : "Join" }}

@@ -34,9 +34,9 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | `src/App.vue` | Shows the login page, or the navbar plus the current page. Rarely needs changes. |
 | `src/pages/` | One `.vue` file per page (Today, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
-| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
+| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `SchedulePicker` (how a habit repeats), `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
 | `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties and weekly bonus) and `firebase.ts` (setup). |
-| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
+| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
 | `src/composables/` | Reusable Vue logic: live friend profiles, cached profiles of any player, today's date. |
 | `src/common.ts` | Helpers shared everywhere: UUIDs, dates, error messages, file names. |
@@ -52,16 +52,17 @@ All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the a
 | --- | --- |
 | Check in by scanning the habit's QR code or NFC sticker | +10 |
 | Every 7th check-in in a row without a penalty (🔥 badge) | +50 |
-| Daily habit: each day without a check-in (streak resets) | −5 |
-| Daily habit: 3rd missed day in a row, extra (🐌 Lazy Snail badge) | −15 |
-| Weekly habit: each check-in short of the weekly target, charged when the week ends (streak resets) | −5 |
-| Weekly habit: a whole week without check-ins, extra (🐌 Lazy Snail badge) | −15 |
+| Each miss: a scheduled weekday without a check-in, or a check-in short of the target when an "X times every Y days" cycle ends (streak resets) | −5 |
+| 3 misses in a row, extra (🐌 Lazy Snail badge) | −15 |
 
-- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it (which also checks them in) or from "Your friends' habits" on the Today page.
+- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it or from "Your friends' habits" on the Today page. The first scan only adds the habit to the account (no check-in, no points); later scans check in.
 - Each habit card shows your points and rank in that habit, your friends' activity, and the full leaderboard (👑 for a clear leader). Leaving a habit drops your points in it.
 - Checking in is only possible by scanning the habit's own QR code or NFC tag. There is no check-in button and codes can't be typed in.
-- One check-in per player per habit per day.
-- Penalties start the day after joining a daily habit, and with the first full week after joining a weekly habit.
+- One check-in per player per habit per day, unless the schedule allows more (see above).
+- Each habit repeats on one of two kinds of schedule, set when it is created:
+  - **X times every Y days** (X ≤ 20, Y ≤ 31; X may exceed Y, e.g. "3 times a day"). Cycles of Y days start on the habit's creation date and are the same for every member. At most X ÷ Y check-ins (rounded up) are allowed per day. Once X check-ins are done, the next one waits for the next cycle.
+  - **On set weekdays** (any combination of Mon–Sun). Check-ins are only possible on those days.
+- Penalties start after joining: for weekday schedules from the day after joining, for interval schedules with the first cycle that starts after the joining day.
 - There is no server: when any member opens the app or checks in, every member of that habit is charged what they owe. A player who never opens the app still loses points. This is idempotent, so nothing is charged twice. Leaderboards also include penalties that are due but not saved yet.
 
 ## Database (Firestore)
@@ -85,17 +86,17 @@ Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local tim
 | --- | --- | --- |
 | `creatorId` | string | Who created it (no special rights afterwards) |
 | `name`, `icon` | string | Name and emoji |
-| `timesPerWeek` | number | 1–7 (7 = every day) |
+| `schedule` | map | `{ type: "interval", times, days }` (X times every Y days) or `{ type: "weekdays", days: [0–6] }` (0 = Monday). Older habits with only `timesPerWeek` are read as interval schedules. |
 | `tagCode` | string | Secret UUID inside the habit's QR code / NFC sticker |
 | `createdDate` | string | |
 | `memberIds` | string[] | Members' user IDs (used for querying) |
-| `members` | map | `{ [userId]: { joinedDate, lastCheckInDate, weekStart, weekCount, totalCheckIns, points, streak, settledThrough } }`: each member's progress and points in this habit's leaderboard |
+| `members` | map | `{ [userId]: { joinedDate, lastCheckInDate, lastDateCount, periodStart, periodCount, totalCheckIns, points, streak, missedInRow, settledThrough } }`: each member's progress and points in this habit's leaderboard |
 | `createdAt` | timestamp | |
 
-`memberIds` and `members` always contain the same users and are always written together in a transaction. `settledThrough` is the last day whose missed check-ins are already charged. The last member to leave deletes the habit.
+`memberIds` and `members` always contain the same users and are always written together in a transaction. `periodCount` counts check-ins in the cycle (or, for weekday schedules, the Monday–Sunday week) starting on `periodStart`. `missedInRow` counts misses since the last check-in. `settledThrough` is the last day whose misses are already charged. The last member to leave deletes the habit.
 
-### `checkins/{habitId}:{userId}:{date}`
-The document ID guarantees one check-in per player per habit per day.
+### `checkins/{habitId}:{userId}:{date}:{number}`
+`number` is the check-in's position that day (1, 2, ...). The per-day limit is enforced from the member's `lastDateCount` inside the check-in transaction.
 
 | Field | Type |
 | --- | --- |

@@ -1,10 +1,10 @@
 import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
 import { todayKey } from "../common";
-import { applyCheckIn, habitStandings, settleAllMembers } from "../game/progress";
+import { applyCheckIn, checkInBlocker, habitStandings, isDailyLimitReached, settleAllMembers } from "../game/progress";
 import { POINTS } from "../game/rules";
 import { badgeData, badgeRef } from "./badges";
 import { COLLECTIONS, db } from "./firebase";
-import { habitRef, isHabitMember, membershipData, newMemberStats, toHabit, type Habit } from "./habits";
+import { habitRef, isHabitMember, membershipData, toHabit, type Habit } from "./habits";
 import { writeLazySnailBadges } from "./settlement";
 import { userRef } from "./users";
 
@@ -15,7 +15,6 @@ export type CheckInResult =
   | {
       status: "checked-in";
       habit: Habit;
-      joined: boolean;
       // Points earned in this habit's leaderboard, including the streak bonus.
       points: number;
       habitPoints: number;
@@ -23,22 +22,23 @@ export type CheckInResult =
       streak: number;
       streakBonus: boolean;
     }
-  | { status: "already-done"; habit: Habit; joined: boolean };
+  | { status: "already-done"; habit: Habit };
 
-// One check-in per player per habit per day: the document ID makes a second one impossible.
+// `number` is the check-in's position that day (1, 2, ...), since some habits allow several a day.
 // ":" cannot appear in habit IDs (UUIDs), user IDs or dates, so the IDs never collide.
-const checkinRef = (habitId: string, userId: string, date: string) =>
-  doc(db, COLLECTIONS.checkins, `${habitId}:${userId}:${date}`);
+const checkinRef = (habitId: string, userId: string, date: string, number: number) =>
+  doc(db, COLLECTIONS.checkins, `${habitId}:${userId}:${date}:${number}`);
 
-// Checks the player in to a habit and adds the points to that habit's leaderboard.
-// Scanning a habit the player has not joined yet joins it first.
+// Checks a member in to a habit and adds the points to that habit's leaderboard.
+// Players must join the habit first (their first scan of its tag only joins it; see joinHabit).
 export const checkIn = (userId: string, habitId: string, method: CheckInMethod): Promise<CheckInResult> =>
   runTransaction(db, async (transaction) => {
     const today = todayKey();
-    const [userSnapshot, habitSnapshot, checkinSnapshot] = await Promise.all([
+    // The habit document holds the member's check-in counts. The transaction retries if it changes
+    // meanwhile, so two scans at once can never both pass the daily limit.
+    const [userSnapshot, habitSnapshot] = await Promise.all([
       transaction.get(userRef(userId)),
       transaction.get(habitRef(habitId)),
-      transaction.get(checkinRef(habitId, userId, today)),
     ]);
 
     if (!userSnapshot.exists()) {
@@ -50,31 +50,35 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
     }
 
     const habit = toHabit(habitSnapshot.id, habitSnapshot.data());
-    const joined = !isHabitMember(habit, userId);
+
+    if (!isHabitMember(habit, userId)) {
+      throw new Error("You haven't joined this habit yet. Scan its tag once to join, then again to check in.");
+    }
 
     // Charge everyone's missed check-ins first, so they are never skipped.
     const settlement = settleAllMembers(habit, today);
     writeLazySnailBadges(transaction, habit, settlement);
     const members = { ...settlement.members };
-    const myStats = members[userId] ?? newMemberStats(today);
 
-    if (checkinSnapshot.exists()) {
-      // Already checked in today. A player who left and re-joined today gets the check-in back without points.
-      if (joined) {
-        members[userId] = { ...applyCheckIn(myStats, today).stats, points: 0 };
-      }
-
-      if (joined || settlement.changed) {
+    if (isDailyLimitReached(habit, members[userId], today)) {
+      if (settlement.changed) {
         transaction.update(habitSnapshot.ref, membershipData(members));
       }
 
-      return { status: "already-done", habit, joined };
+      return { status: "already-done", habit };
     }
 
-    const outcome = applyCheckIn(myStats, today);
+    // Unscheduled weekdays and cycles whose target is already reached earn nothing, so they are refused.
+    const blocker = checkInBlocker(habit, members[userId], today);
+
+    if (blocker) {
+      throw new Error(blocker);
+    }
+
+    const outcome = applyCheckIn(habit, members[userId], today);
     members[userId] = outcome.stats;
 
-    transaction.set(checkinRef(habitId, userId, today), {
+    transaction.set(checkinRef(habitId, userId, today, outcome.stats.lastDateCount), {
       userId,
       habitId,
       date: today,
@@ -94,7 +98,6 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
     return {
       status: "checked-in",
       habit: updatedHabit,
-      joined,
       points: outcome.points,
       habitPoints: outcome.stats.points,
       rank,
