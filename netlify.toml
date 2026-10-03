@@ -1,0 +1,10 @@
+# Netlify deployment. The Firebase config (VITE_FIREBASE_*) must be set as environment variables
+# in the Netlify UI; Vite builds them into the app, and .env.local is not in the repo.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Vite 8 requires Node 20.19+ or 22.12+.
+  NODE_VERSION = "22"

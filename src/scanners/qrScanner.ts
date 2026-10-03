@@ -1,4 +1,4 @@
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5QrcodeScanType, Html5QrcodeScanner } from "html5-qrcode";
 
 // Renders a camera QR scanner into the element with the given ID and reports each decoded text.
 export class QrScanner {
@@ -15,6 +15,8 @@ export class QrScanner {
         fps: 10,
         qrbox: { width: 260, height: 260 },
         aspectRatio: 1,
+        // Camera only: scanning an image file would let anyone check in from a photo of the QR code.
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
       },
       false,
     );
