@@ -1,6 +1,8 @@
-`<script setup lang="ts">
+<script setup lang="ts">
 import { onBeforeUnmount, ref } from "vue";
 import { Html5QrcodeScanner } from "html5-qrcode";
+import QrGenerator from "./components/QrGenerator.vue";
+import { findTag } from "./firebase";
 
 type NfcRecord = {
   recordType: string;
@@ -25,6 +27,12 @@ const source = ref("Not captured yet");
 const status = ref("Ready to read a UUID");
 const errorMessage = ref("");
 const qrScannerElement = ref<HTMLElement | null>(null);
+const view = ref<"scan" | "generate">("scan");
+const lookup = ref<"idle" | "checking" | "found" | "missing" | "error">("idle");
+const tagName = ref("");
+
+// Guards against an older lookup resolving after a newer scan.
+let lookupId = 0;
 
 let qrScanner: Html5QrcodeScanner | null = null;
 let nfcReader: NfcReaderLike | null = null;
@@ -52,6 +60,30 @@ const stopQrScanner = () => {
   }
 };
 
+const verifyUuid = async (value: string) => {
+  const currentLookup = ++lookupId;
+  lookup.value = "checking";
+  tagName.value = "";
+
+  try {
+    const tag = await findTag(value);
+
+    if (currentLookup !== lookupId) {
+      return;
+    }
+
+    lookup.value = tag ? "found" : "missing";
+    tagName.value = tag?.name ?? "";
+  } catch (error) {
+    if (currentLookup !== lookupId) {
+      return;
+    }
+
+    lookup.value = "error";
+    errorMessage.value = error instanceof Error ? error.message : "The database could not be reached.";
+  }
+};
+
 const handleCapturedUuid = (value: string, origin: "QR code" | "NFC tag") => {
   try {
     const nextUuid = normalizeUuid(value);
@@ -60,6 +92,7 @@ const handleCapturedUuid = (value: string, origin: "QR code" | "NFC tag") => {
     status.value = `UUID captured from ${origin}.`;
     errorMessage.value = "";
     stopQrScanner();
+    void verifyUuid(nextUuid);
   } catch (error) {
     const message = error instanceof Error ? error.message : "A valid UUID could not be read.";
     errorMessage.value = message;
@@ -171,6 +204,12 @@ const startNfcScan = async () => {
   }
 };
 
+const switchToGenerate = async () => {
+  view.value = "generate";
+  stopQrScanner();
+  await stopNfcScan();
+};
+
 onBeforeUnmount(async () => {
   stopQrScanner();
   await stopNfcScan();
@@ -179,7 +218,16 @@ onBeforeUnmount(async () => {
 
 <template>
   <main class="app-shell">
-    <section class="panel">
+    <nav class="tabs">
+      <button type="button" :class="view === 'scan' ? 'primary' : 'secondary'" @click="view = 'scan'">Scan</button>
+      <button type="button" :class="view === 'generate' ? 'primary' : 'secondary'" @click="switchToGenerate">
+        Generate
+      </button>
+    </nav>
+
+    <QrGenerator v-if="view === 'generate'" />
+
+    <section v-show="view === 'scan'" class="panel">
       <div class="header">
         <p class="eyebrow">UUID reader</p>
         <h1>Scan a unique identifier</h1>
@@ -204,167 +252,16 @@ onBeforeUnmount(async () => {
         <label>Captured UUID</label>
         <div class="uuid-value">{{ uuid || "No UUID captured yet" }}</div>
         <small>Source: {{ source }}</small>
+        <div v-if="lookup !== 'idle'" class="lookup" :class="lookup">
+          <template v-if="lookup === 'checking'">Checking database...</template>
+          <template v-else-if="lookup === 'found'">
+            <span>Registered as</span>
+            <strong>{{ tagName }}</strong>
+          </template>
+          <template v-else-if="lookup === 'missing'">This UUID is not registered in the database.</template>
+          <template v-else>Could not verify this UUID.</template>
+        </div>
       </div>
     </section>
   </main>
 </template>
-
-<style scoped>
-:global(body) {
-  margin: 0;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #111827 100%);
-  font-family: Inter, "Segoe UI", sans-serif;
-  color: #e2e8f0;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-button {
-  font: inherit;
-}
-
-.app-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
-
-.panel {
-  width: min(100%, 720px);
-  background: rgba(15, 23, 42, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 24px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
-  padding: 24px;
-}
-
-.header {
-  margin-bottom: 18px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  color: #60a5fa;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.1;
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-button {
-  border: none;
-  border-radius: 12px;
-  padding: 0.9rem 1.2rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-button:hover {
-  transform: translateY(-1px);
-}
-
-.primary {
-  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
-  color: white;
-}
-
-.secondary {
-  background: rgba(148, 163, 184, 0.14);
-  color: #e2e8f0;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.status-row {
-  margin-bottom: 14px;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.45rem 0.8rem;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  color: #bae6fd;
-  font-size: 0.88rem;
-}
-
-.error-box {
-  margin-bottom: 16px;
-  padding: 0.9rem 1rem;
-  border-radius: 12px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  color: #fecaca;
-}
-
-.scanner-box {
-  width: 100%;
-  min-height: 260px;
-  border-radius: 18px;
-  overflow: hidden;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  margin-bottom: 18px;
-}
-
-.uuid-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(15, 118, 110, 0.12);
-  border: 1px solid rgba(45, 212, 191, 0.3);
-}
-
-.uuid-card label {
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #99f6e4;
-}
-
-.uuid-value {
-  word-break: break-all;
-  font-size: clamp(1.1rem, 2vw, 1.8rem);
-  font-weight: 700;
-  color: white;
-}
-
-.uuid-card small {
-  color: #cbd5e1;
-}
-
-@media (max-width: 640px) {
-  .panel {
-    padding: 18px;
-  }
-
-  .actions {
-    flex-direction: column;
-  }
-
-  button {
-    width: 100%;
-  }
-}
-</style>
-`
