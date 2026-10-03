@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { toErrorMessage } from "../common";
 import { loginUser } from "../firebase";
 import { setCurrentUser } from "../session";
 
@@ -32,7 +33,7 @@ const login = async () => {
     const { user } = await loginUser(trimmedNickname.value);
     setCurrentUser(user);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "Logging in failed.";
+    errorMessage.value = toErrorMessage(error, "Logging in failed.");
   } finally {
     isLoggingIn.value = false;
   }
@@ -72,28 +73,6 @@ const login = async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field span {
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #99f6e4;
-}
-
-.field input {
-  font: inherit;
-  padding: 0.8rem 1rem;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.8);
-  color: #e2e8f0;
 }
 
 .hint {

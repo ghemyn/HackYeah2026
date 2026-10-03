@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import QRCode from "qrcode";
+import { generateUuid, toErrorMessage, toSafeFileName } from "../common";
 import { saveTag } from "../firebase";
 
 const QR_SIZE = 320;
@@ -55,12 +56,12 @@ const renderQrImage = async () => {
 const generate = async () => {
   try {
     errorMessage.value = "";
-    uuid.value = crypto.randomUUID();
+    uuid.value = generateUuid();
     isSaved.value = false;
     await renderQrImage();
     status.value = "New UUID generated. Name it and save it to the database.";
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "The QR code could not be generated.";
+    errorMessage.value = toErrorMessage(error, "The QR code could not be generated.");
   }
 };
 
@@ -82,7 +83,7 @@ const save = async () => {
     isSaved.value = true;
     status.value = `Saved "${trimmedName.value}" to the database.`;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "Saving to Firebase failed.";
+    errorMessage.value = toErrorMessage(error, "Saving to Firebase failed.");
     status.value = "Save failed";
   } finally {
     isSaving.value = false;
@@ -94,10 +95,9 @@ const download = () => {
     return;
   }
 
-  const safeName = trimmedName.value.replace(/[^\p{L}\p{N}_-]+/gu, "_") || uuid.value;
   const link = document.createElement("a");
   link.href = qrImageUrl.value;
-  link.download = `${safeName}.png`;
+  link.download = `${toSafeFileName(trimmedName.value, uuid.value)}.png`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -146,26 +146,7 @@ const download = () => {
 
 <style scoped>
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   margin-bottom: 18px;
-}
-
-.field span {
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #99f6e4;
-}
-
-.field input {
-  font: inherit;
-  padding: 0.8rem 1rem;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.8);
-  color: #e2e8f0;
 }
 
 .qr-preview {
