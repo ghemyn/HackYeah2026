@@ -13,7 +13,7 @@ npm run tauri dev    # desktop app
 npm run build        # type-check + production build
 ```
 
-Firebase config goes in `.env.local` (gitignored):
+Firebase config goes in `.env.local` (gitignored). Also follow the Firebase setup checklist under "Security" below.
 
 ```
 VITE_FIREBASE_API_KEY=
@@ -32,15 +32,15 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | Path | Responsibility |
 | --- | --- |
 | `src/App.vue` | Shows the login page, or the navbar plus the current page. Rarely needs changes. |
-| `src/pages/` | One `.vue` file per page (Today, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
+| `src/pages/` | One `.vue` file per page (Habits, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
 | `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `SchedulePicker` (how a habit repeats), `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
-| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties and weekly bonus) and `firebase.ts` (setup). |
+| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties), `auth.ts` (registration and login with Firebase Authentication), `sha256.ts` and `firebase.ts` (setup). |
 | `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
 | `src/composables/` | Reusable Vue logic: live friend profiles, cached profiles of any player, today's date. |
 | `src/common.ts` | Helpers shared everywhere: UUIDs, dates, error messages, file names. |
-| `src/session.ts` | The logged-in player and their live profile. |
+| `src/session.ts` | The logged-in player (from Firebase Authentication) and their live profile. |
 | `src/navigation.ts` | The current page and `navigate(pageId)`. |
 | `src/styles.css` | Global styles shared by every page (panel, buttons, form fields, stats, list rows). |
 
@@ -55,7 +55,7 @@ All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the a
 | Each miss: a scheduled weekday without a check-in, or a check-in short of the target when an "X times every Y days" cycle ends (streak resets) | −5 |
 | 3 misses in a row, extra (🐌 Lazy Snail badge) | −15 |
 
-- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it or from "Your friends' habits" on the Today page. The first scan only adds the habit to the account (no check-in, no points); later scans check in.
+- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it or from "Your friends' habits" on the Habits page. The first scan only adds the habit to the account (no check-in, no points); later scans check in.
 - Each habit card shows your points and rank in that habit, your friends' activity, and the full leaderboard (👑 for a clear leader). Leaving a habit drops your points in it.
 - Checking in is only possible by scanning the habit's own QR code or NFC tag. There is no check-in button and codes can't be typed in.
 - One check-in per player per habit per day, unless the schedule allows more (see above).
@@ -77,6 +77,7 @@ Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local tim
 | `nickname` | string | As typed at sign-up |
 | `avatar` | string | Emoji |
 | `createdDate` | string | Sign-up day |
+| `uid` | string | The Firebase Authentication user that owns this account |
 | `createdAt` | timestamp | Server time |
 
 ### `habits/{habitId}`
@@ -133,5 +134,21 @@ The app only uses single-field queries:
 
 Firestore indexes these automatically, so **no composite indexes are needed**. Transactions are used for sign-up, check-ins and settlement.
 
-### Security rules
-Login is nickname-only (no Firebase Auth), so the rules cannot tell players apart. `firestore.rules` allows reads and writes on the five collections and denies everything else. That is fine for a hackathon demo, but anyone with the app's config can edit any data.
+### Security
+
+**Accounts.** Players register and log in with a nickname and a password, using Firebase Authentication (email/password provider).
+- Passwords are sent only to Firebase Authentication over HTTPS. Google hashes them with scrypt and rate-limits guessing. Neither the app nor Firestore ever stores a password or a password hash.
+- Firebase needs an email address, so each nickname maps to `<sha256(lowercased nickname)>@habitrivals.app`. No email is ever sent.
+- Passwords must be 8–128 characters and different from the nickname.
+- Login errors never reveal whether the nickname or the password was wrong.
+- The login is kept by Firebase across restarts. Registering never logs the player in. If creating the player account fails, the new login is deleted again.
+
+**Rules.** `firestore.rules` requires a signed-in user for everything. It ties each player account to its login by recomputing the login email from the account's ID, so nobody can create or edit someone else's account. Players can only add or remove themselves as habit members, write their own check-ins, and change only membership fields of a habit. Field lists, ID formats and timestamps are checked, and anything not listed is denied.
+
+**Known limits (no server code).** Penalties are applied by whichever member opens the app, so the rules have to let members update each other's habit stats. A signed-in player who calls the Firestore API directly (bypassing the app) could therefore change points in habits they belong to. Any signed-in player can also read habits' tag codes through the API. Closing these gaps needs Cloud Functions to apply check-ins and penalties on the server.
+
+### Firebase setup checklist
+1. **Authentication → Sign-in method:** enable **Email/Password**. Leave email link sign-in off.
+2. **Firestore → Rules:** paste `firestore.rules` and publish.
+3. Delete any `users` documents created before passwords existed. They have no login, so their nicknames can't be registered or used.
+4. If the API key is restricted to certain websites in Google Cloud Console, add the deployed site and `tauri.localhost`.

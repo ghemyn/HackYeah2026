@@ -54,7 +54,7 @@ const lazySnailHabits = computed(() =>
 <template>
   <section class="panel">
     <div class="header">
-      <p class="eyebrow">Today</p>
+      <p class="eyebrow">Home</p>
       <h1>Your habits</h1>
     </div>
 

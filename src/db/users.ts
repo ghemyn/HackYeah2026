@@ -1,6 +1,11 @@
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
+  query,
+  where,
   onSnapshot,
   runTransaction,
   serverTimestamp,
@@ -13,6 +18,7 @@ import { DEFAULT_AVATAR } from "../game/catalog";
 import { COLLECTIONS, db, readString } from "./firebase";
 
 // The account. Points are not stored here: they belong to the player's membership in each habit.
+// The document also stores `uid`, the Firebase Authentication user that owns it (see db/auth.ts).
 export type UserProfile = {
   // Lowercased nickname; also the document ID.
   id: string;
@@ -45,14 +51,22 @@ export const findUser = async (userId: string): Promise<UserProfile | null> => {
   return snapshot.exists() ? toUserProfile(snapshot.id, snapshot.data()) : null;
 };
 
-export const createUser = (nickname: string, avatar: string): Promise<UserProfile> =>
+// The player account owned by a Firebase Authentication user, if any.
+export const findUserByUid = async (uid: string): Promise<UserProfile | null> => {
+  const snapshot = await getDocs(query(collection(db, COLLECTIONS.users), where("uid", "==", uid), limit(1)));
+  const userDoc = snapshot.docs[0];
+  return userDoc ? toUserProfile(userDoc.id, userDoc.data()) : null;
+};
+
+// Creates the player account for a newly registered Firebase Authentication user.
+export const createUser = (nickname: string, avatar: string, uid: string): Promise<UserProfile> =>
   runTransaction(db, async (transaction) => {
     const userId = toUserId(nickname);
     const ref = userRef(userId);
     const existing = await transaction.get(ref);
 
     if (existing.exists()) {
-      throw new Error("This nickname is already taken. Go back and log in instead.");
+      throw new Error("This nickname is already taken. Pick another one, or log in if it's yours.");
     }
 
     const data = {
@@ -61,7 +75,7 @@ export const createUser = (nickname: string, avatar: string): Promise<UserProfil
       createdDate: todayKey(),
     };
 
-    transaction.set(ref, { ...data, createdAt: serverTimestamp() });
+    transaction.set(ref, { ...data, uid, createdAt: serverTimestamp() });
     return toUserProfile(userId, data);
   });
 

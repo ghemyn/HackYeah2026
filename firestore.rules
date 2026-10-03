@@ -1,27 +1,124 @@
 rules_version = '2';
 
-// Hackathon rules: login is nickname-only (no Firebase Auth), so any client may read and write
-// the app's five collections. Everything else is denied. See README.md ("Database").
+// HabitRivals security rules. Players sign in with Firebase Authentication (email/password). Each nickname
+// maps to the login email "<sha256(userId) in hex>@habitrivals.app" (see src/db/auth.ts), so the rules can
+// verify which player account a signed-in user owns without reading any document.
+// Anything not explicitly allowed below is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Must match loginEmail() in src/db/auth.ts.
+    function loginEmail(userId) {
+      return hashing.sha256(userId).toHexString().lower() + '@habitrivals.app';
+    }
+
+    // Whether the signed-in user owns the player account `userId`.
+    function isPlayer(userId) {
+      return signedIn() && userId is string && request.auth.token.email == loginEmail(userId);
+    }
+
+    // The signed-in player's user ID. Registration stores it as the auth display name ("name" claim);
+    // it is only trusted after checking it against the login email.
+    function myUserId() {
+      return request.auth.token.name;
+    }
+
+    function hasVerifiedUserId() {
+      return signedIn() && 'name' in request.auth.token && isPlayer(request.auth.token.name);
+    }
+
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+
+      // Only the owner of the nickname's login can create its account, once.
+      allow create: if isPlayer(userId)
+        && request.resource.data.keys().hasOnly(['nickname', 'avatar', 'createdDate', 'createdAt', 'uid'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.nickname.lower() == userId
+        && request.resource.data.avatar is string
+        && request.resource.data.avatar.size() <= 16
+        && request.resource.data.createdDate is string
+        && request.resource.data.createdAt == request.time;
+
+      // The owner can only change their avatar.
+      allow update: if isPlayer(userId)
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatar'])
+        && request.resource.data.avatar is string
+        && request.resource.data.avatar.size() <= 16;
+
+      allow delete: if false;
     }
 
     match /habits/{habitId} {
-      allow read, write: if true;
+      // Signed-in players can find any habit (scanning a tag looks it up by its code).
+      allow read: if signedIn();
+
+      allow create: if isPlayer(request.resource.data.creatorId)
+        && request.resource.data.keys().hasOnly([
+          'creatorId', 'name', 'icon', 'schedule', 'tagCode', 'createdDate', 'memberIds', 'members', 'createdAt'
+        ])
+        && request.resource.data.memberIds == [request.resource.data.creatorId]
+        && request.resource.data.members.keys().hasOnly([request.resource.data.creatorId])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.tagCode is string
+        && request.resource.data.createdAt == request.time;
+
+      // Joining, leaving, check-ins and penalties only change the membership fields, and players can add or
+      // remove only themselves. Name, schedule, creator and tag code can never change.
+      allow update: if hasVerifiedUserId()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds'])
+        && request.resource.data.memberIds.toSet().difference(resource.data.memberIds.toSet()).hasOnly([myUserId()])
+        && resource.data.memberIds.toSet().difference(request.resource.data.memberIds.toSet()).hasOnly([myUserId()])
+        && request.resource.data.members.keys().toSet() == request.resource.data.memberIds.toSet();
+
+      // Only the last member, when leaving.
+      allow delete: if hasVerifiedUserId() && resource.data.memberIds == [myUserId()];
     }
 
     match /checkins/{checkinId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+
+      // Players record only their own check-ins. Check-ins are permanent.
+      allow create: if isPlayer(request.resource.data.userId)
+        && request.resource.data.keys().hasOnly(['userId', 'habitId', 'date', 'method', 'points', 'createdAt'])
+        && request.resource.data.method in ['qr', 'nfc']
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
     }
 
     match /friends/{friendshipId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+
+      // Either side of a friendship can create or remove it (both directions are written together).
+      allow create, update: if (isPlayer(request.resource.data.userId) || isPlayer(request.resource.data.friendId))
+        && friendshipId == request.resource.data.userId + ':' + request.resource.data.friendId
+        && request.resource.data.keys().hasOnly(['userId', 'friendId', 'createdAt'])
+        && request.resource.data.userId != request.resource.data.friendId;
+
+      allow delete: if isPlayer(resource.data.userId) || isPlayer(resource.data.friendId);
     }
 
     match /badges/{badgeId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+
+      // Players earn their own streak badges. Lazy Snail badges are handed out to other members too, because
+      // penalties are applied by whichever member opens the app.
+      allow create, update: if hasVerifiedUserId()
+        && request.resource.data.keys().hasOnly(['userId', 'type', 'date', 'habitId', 'habitName', 'createdAt'])
+        && request.resource.data.type in ['streak', 'lazySnail']
+        && (request.resource.data.type == 'lazySnail' || isPlayer(request.resource.data.userId))
+        && badgeId == request.resource.data.userId + ':' + request.resource.data.type + ':'
+          + request.resource.data.date + ':' + request.resource.data.habitId;
+
+      allow delete: if false;
     }
   }
 }

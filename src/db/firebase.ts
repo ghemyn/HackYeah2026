@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -10,7 +11,12 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-export const db = getFirestore(initializeApp(firebaseConfig));
+const app = initializeApp(firebaseConfig);
+
+export const db = getFirestore(app);
+
+// Firebase Authentication: passwords are hashed and checked by Google's servers (scrypt), never stored by us.
+export const auth = getAuth(app);
 
 // Firestore collection names. The fields of each one are described in README.md ("Database").
 export const COLLECTIONS = {

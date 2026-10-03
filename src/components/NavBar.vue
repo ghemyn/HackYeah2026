@@ -4,7 +4,7 @@ import { pages } from "../pages";
 import { currentUser, logout, profile, sessionError } from "../session";
 
 const logOut = () => {
-  logout();
+  void logout();
   navigate(pages[0].id);
 };
 </script>

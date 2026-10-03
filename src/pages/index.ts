@@ -10,7 +10,7 @@ export type PageDefinition = {
 // To add a page, create it in this folder and add one line here (keep one page per line to avoid merge conflicts).
 // Pages are loaded lazily, so each one ends up in its own chunk.
 export const pages: PageDefinition[] = [
-  { id: "today", label: "Today", component: defineAsyncComponent(() => import("./HabitsPage.vue")) },
+  { id: "habits", label: "Habits", component: defineAsyncComponent(() => import("./HabitsPage.vue")) },
   { id: "scan", label: "Scan", component: defineAsyncComponent(() => import("./ScanPage.vue")) },
   { id: "friends", label: "Friends", component: defineAsyncComponent(() => import("./FriendsPage.vue")) },
   { id: "profile", label: "Profile", component: defineAsyncComponent(() => import("./ProfilePage.vue")) },

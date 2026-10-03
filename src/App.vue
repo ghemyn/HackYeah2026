@@ -4,7 +4,7 @@ import NavBar from "./components/NavBar.vue";
 import { currentPageId } from "./navigation";
 import { findPage } from "./pages";
 import LoginPage from "./pages/LoginPage.vue";
-import { currentUser } from "./session";
+import { authReady, currentUser } from "./session";
 
 const currentPage = computed(() => findPage(currentPageId.value));
 
@@ -12,7 +12,8 @@ const currentPage = computed(() => findPage(currentPageId.value));
 
 <template>
   <main class="app-shell">
-    <LoginPage v-if="!currentUser" />
+    <p v-if="!authReady" class="hint">Loading...</p>
+    <LoginPage v-else-if="!currentUser" />
 
     <template v-else>
       <NavBar />
