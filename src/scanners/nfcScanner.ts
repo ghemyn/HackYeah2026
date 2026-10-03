@@ -11,6 +11,7 @@ type NfcMessage = {
 
 type NfcReaderLike = {
   scan: (options?: { signal?: AbortSignal }) => Promise<void>;
+  write: (message: string, options?: { signal?: AbortSignal }) => Promise<void>;
   onreading: ((event: { message: NfcMessage; serialNumber?: string }) => void) | null;
   onreadingerror: ((event: Event) => void) | null;
 };
@@ -25,6 +26,9 @@ const getNdefReaderConstructor = () =>
   (window as Window & { NDEFReader?: new () => NfcReaderLike }).NDEFReader;
 
 export const isNfcSupported = (): boolean => Boolean(getNdefReaderConstructor());
+
+const NFC_UNSUPPORTED_MESSAGE =
+  "Web NFC is not supported on this device. It only works in Chrome on Android; use the QR code instead.";
 
 const readNfcPayload = (records: NfcRecord[]): string => {
   for (const record of records) {
@@ -50,7 +54,7 @@ export class NfcScanner {
     const NDEFReaderCtor = getNdefReaderConstructor();
 
     if (!NDEFReaderCtor) {
-      throw new Error("Web NFC is not supported in this browser or device. Enable NFC in the phone browser and try again.");
+      throw new Error(NFC_UNSUPPORTED_MESSAGE);
     }
 
     this.stop();
@@ -71,3 +75,14 @@ export class NfcScanner {
     this.abortController = null;
   }
 }
+
+// Writes `text` as a single NDEF text record to the next tag held near the phone.
+export const writeNfcText = async (text: string): Promise<void> => {
+  const NDEFReaderCtor = getNdefReaderConstructor();
+
+  if (!NDEFReaderCtor) {
+    throw new Error(NFC_UNSUPPORTED_MESSAGE);
+  }
+
+  await new NDEFReaderCtor().write(text);
+};

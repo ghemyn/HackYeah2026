@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Hackathon rules: login is nickname-only (no Firebase Auth), so any client may read and write
+// the app's five collections. Everything else is denied. See README.md ("Database").
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /habits/{habitId} {
+      allow read, write: if true;
+    }
+
+    match /checkins/{checkinId} {
+      allow read, write: if true;
+    }
+
+    match /friends/{friendshipId} {
+      allow read, write: if true;
+    }
+
+    match /badges/{badgeId} {
+      allow read, write: if true;
+    }
+  }
+}

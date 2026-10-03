@@ -18,8 +18,8 @@ async function startCamera() {
       video: { facingMode: facingMode.value },
       audio: false,
     });
-    if (videoRef.current || videoRef.value) {
-      videoRef.value!.srcObject = stream;
+    if (videoRef.value) {
+      videoRef.value.srcObject = stream;
     }
   } catch (err) {
     console.error("Błąd dostępu do kamery:", err);
