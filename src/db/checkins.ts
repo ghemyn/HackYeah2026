@@ -1,18 +1,28 @@
-import { arrayUnion, doc, runTransaction, serverTimestamp } from "firebase/firestore";
-import { todayKey, weekStartKey } from "../common";
-import { earnsStreakBonus, habitCountThisWeek, rollWeek, streakAfterCheckIn } from "../game/progress";
+import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { todayKey } from "../common";
+import { applyCheckIn, habitStandings, settleAllMembers } from "../game/progress";
 import { POINTS } from "../game/rules";
 import { badgeData, badgeRef } from "./badges";
 import { COLLECTIONS, db } from "./firebase";
-import { habitRef, isHabitMember, memberStats, memberStatsPath, toHabit, type Habit, type HabitMemberStats } from "./habits";
-import { settleMissedDays } from "./settlement";
-import { toUserProfile, userRef } from "./users";
+import { habitRef, isHabitMember, membershipData, newMemberStats, toHabit, type Habit } from "./habits";
+import { writeLazySnailBadges } from "./settlement";
+import { userRef } from "./users";
 
 // Check-ins require scanning the habit's own QR code or NFC tag; there is no button check-in.
 export type CheckInMethod = "qr" | "nfc";
 
 export type CheckInResult =
-  | { status: "checked-in"; habit: Habit; joined: boolean; points: number; streak: number; streakBonus: boolean }
+  | {
+      status: "checked-in";
+      habit: Habit;
+      joined: boolean;
+      // Points earned in this habit's leaderboard, including the streak bonus.
+      points: number;
+      habitPoints: number;
+      rank: number;
+      streak: number;
+      streakBonus: boolean;
+    }
   | { status: "already-done"; habit: Habit; joined: boolean };
 
 // One check-in per player per habit per day: the document ID makes a second one impossible.
@@ -20,12 +30,10 @@ export type CheckInResult =
 const checkinRef = (habitId: string, userId: string, date: string) =>
   doc(db, COLLECTIONS.checkins, `${habitId}:${userId}:${date}`);
 
-// Checks the player in to a habit. Scanning a habit the player has not joined yet joins it first.
-export const checkIn = async (userId: string, habitId: string, method: CheckInMethod): Promise<CheckInResult> => {
-  // Apply penalties for days missed before today first, so they are never skipped.
-  await settleMissedDays(userId);
-
-  return runTransaction(db, async (transaction) => {
+// Checks the player in to a habit and adds the points to that habit's leaderboard.
+// Scanning a habit the player has not joined yet joins it first.
+export const checkIn = (userId: string, habitId: string, method: CheckInMethod): Promise<CheckInResult> =>
+  runTransaction(db, async (transaction) => {
     const today = todayKey();
     const [userSnapshot, habitSnapshot, checkinSnapshot] = await Promise.all([
       transaction.get(userRef(userId)),
@@ -43,31 +51,28 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
 
     const habit = toHabit(habitSnapshot.id, habitSnapshot.data());
     const joined = !isHabitMember(habit, userId);
-    const stats = memberStats(habit, userId, today);
-    const weekStart = weekStartKey(today);
-    const statsAfterCheckIn: HabitMemberStats = {
-      ...stats,
-      lastCheckInDate: today,
-      weekStart,
-      weekCount: habitCountThisWeek(stats, today) + 1,
-      totalCheckIns: stats.totalCheckIns + 1,
-    };
+
+    // Charge everyone's missed check-ins first, so they are never skipped.
+    const settlement = settleAllMembers(habit, today);
+    writeLazySnailBadges(transaction, habit, settlement);
+    const members = { ...settlement.members };
+    const myStats = members[userId] ?? newMemberStats(today);
 
     if (checkinSnapshot.exists()) {
-      // Left and re-joined on a day already checked in: restore the membership with today's check-in.
+      // Already checked in today. A player who left and re-joined today gets the check-in back without points.
       if (joined) {
-        transaction.update(habitSnapshot.ref, memberStatsPath(userId), statsAfterCheckIn, "memberIds", arrayUnion(userId));
+        members[userId] = { ...applyCheckIn(myStats, today).stats, points: 0 };
+      }
+
+      if (joined || settlement.changed) {
+        transaction.update(habitSnapshot.ref, membershipData(members));
       }
 
       return { status: "already-done", habit, joined };
     }
 
-    const profile = toUserProfile(userSnapshot.id, userSnapshot.data());
-    const previousStreak = profile.lastCheckInDate === today ? profile.streak : 0;
-    const streak = streakAfterCheckIn(profile, today);
-    const streakBonus = earnsStreakBonus(previousStreak, streak);
-    const points = POINTS.checkIn + (streakBonus ? POINTS.streakBonus : 0);
-    const week = rollWeek(profile, today);
+    const outcome = applyCheckIn(myStats, today);
+    members[userId] = outcome.stats;
 
     transaction.set(checkinRef(habitId, userId, today), {
       userId,
@@ -77,22 +82,23 @@ export const checkIn = async (userId: string, habitId: string, method: CheckInMe
       points: POINTS.checkIn,
       createdAt: serverTimestamp(),
     });
+    transaction.update(habitSnapshot.ref, membershipData(members));
 
-    transaction.update(habitSnapshot.ref, memberStatsPath(userId), statsAfterCheckIn, "memberIds", arrayUnion(userId));
-
-    transaction.update(userSnapshot.ref, {
-      totalPoints: profile.totalPoints + points,
-      weekStart: week.weekStart,
-      weekPoints: week.weekPoints + points,
-      lastWeekPoints: week.lastWeekPoints,
-      streak,
-      lastCheckInDate: today,
-    });
-
-    if (streakBonus) {
-      transaction.set(badgeRef(userId, "streak", today), badgeData(userId, "streak", today));
+    if (outcome.streakBonus) {
+      transaction.set(badgeRef(userId, "streak", today, habit), badgeData(userId, "streak", today, habit));
     }
 
-    return { status: "checked-in", habit, joined, points, streak, streakBonus };
+    const updatedHabit = { ...habit, ...membershipData(members) };
+    const rank = habitStandings(updatedHabit, today).find((standing) => standing.userId === userId)?.rank ?? 1;
+
+    return {
+      status: "checked-in",
+      habit: updatedHabit,
+      joined,
+      points: outcome.points,
+      habitPoints: outcome.stats.points,
+      rank,
+      streak: outcome.stats.streak,
+      streakBonus: outcome.streakBonus,
+    };
   });
-};

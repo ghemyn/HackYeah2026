@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { toErrorMessage, weekStartKey } from "../common";
+import { toErrorMessage } from "../common";
 import EmojiPicker from "../components/EmojiPicker.vue";
 import { useToday } from "../composables/useToday";
 import { watchBadges, type Badge } from "../db/badges";
+import { watchHabits, type Habit } from "../db/habits";
 import { updateAvatar } from "../db/users";
 import { BADGES } from "../game/badges";
 import { AVATARS, DEFAULT_AVATAR } from "../game/catalog";
-import { currentStreak, pointsInWeek } from "../game/progress";
-import { LAZY_SNAIL_AFTER_MISSED_DAYS, POINTS, STREAK_BONUS_EVERY_DAYS } from "../game/rules";
+import { habitStandings } from "../game/progress";
+import { LAZY_SNAIL_AFTER_MISSED_DAYS, POINTS, STREAK_BONUS_EVERY_CHECK_INS } from "../game/rules";
 import { profile, requireUserId } from "../session";
 
 const userId = requireUserId();
 const today = useToday();
 
 const badges = ref<Badge[]>([]);
+const habits = ref<Habit[]>([]);
 const errorMessage = ref("");
 const avatar = ref(profile.value?.avatar ?? DEFAULT_AVATAR);
 
@@ -28,7 +30,20 @@ const stopWatchingBadges = watchBadges(
   },
 );
 
-onBeforeUnmount(stopWatchingBadges);
+const stopWatchingHabits = watchHabits(
+  userId,
+  (nextHabits) => {
+    habits.value = nextHabits;
+  },
+  (error) => {
+    errorMessage.value = toErrorMessage(error, "Your habits could not be loaded.");
+  },
+);
+
+onBeforeUnmount(() => {
+  stopWatchingBadges();
+  stopWatchingHabits();
+});
 
 // Keep the picker in sync with the stored avatar (it may load after this page opens).
 watch(
@@ -53,15 +68,25 @@ watch(avatar, async (nextAvatar) => {
   }
 });
 
-const weekPoints = computed(() => (profile.value ? pointsInWeek(profile.value, weekStartKey(today.value)) : 0));
-const streak = computed(() => (profile.value ? currentStreak(profile.value, today.value) : 0));
+// Points only exist inside each habit's leaderboard; this lists them side by side.
+const leaderboards = computed(() =>
+  habits.value.flatMap((habit) => {
+    const standings = habitStandings(habit, today.value);
+    const mine = standings.find((standing) => standing.userId === userId);
+    return mine ? [{ habit, standing: mine, size: standings.length }] : [];
+  }),
+);
+const totalCheckIns = computed(() =>
+  habits.value.reduce((sum, habit) => sum + (habit.members[userId]?.totalCheckIns ?? 0), 0),
+);
 
 const rules = [
-  { action: "Check in by scanning a habit's QR or NFC tag", points: POINTS.checkIn },
-  { action: `${STREAK_BONUS_EVERY_DAYS}-day streak 🔥`, points: POINTS.streakBonus },
-  { action: "Beat all friends in a week 👑", points: POINTS.weeklyWinner },
-  { action: "Miss a day (streak resets)", points: POINTS.missedDay },
-  { action: `Miss ${LAZY_SNAIL_AFTER_MISSED_DAYS} days in a row 🐌 (extra)`, points: POINTS.lazySnail },
+  { action: "Check in by scanning the habit's QR or NFC tag", points: POINTS.checkIn },
+  { action: `${STREAK_BONUS_EVERY_CHECK_INS} check-ins in a row without a penalty 🔥`, points: POINTS.streakBonus },
+  { action: "Daily habit: each missed day (streak resets)", points: POINTS.missed },
+  { action: `Daily habit: ${LAZY_SNAIL_AFTER_MISSED_DAYS} missed days in a row 🐌 (extra)`, points: POINTS.lazySnail },
+  { action: "Weekly habit: each check-in short of the target", points: POINTS.missed },
+  { action: "Weekly habit: a whole week without check-ins 🐌 (extra)", points: POINTS.lazySnail },
 ];
 
 const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}`);
@@ -76,32 +101,51 @@ const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}
 
     <div class="stats">
       <div class="stat">
-        <strong>{{ profile?.totalPoints ?? 0 }}</strong>
-        <span>total points</span>
+        <strong>{{ habits.length }}</strong>
+        <span>habits joined</span>
       </div>
       <div class="stat">
-        <strong>{{ weekPoints }}</strong>
-        <span>this week</span>
+        <strong>{{ totalCheckIns }}</strong>
+        <span>check-ins</span>
       </div>
       <div class="stat">
-        <strong>🔥 {{ streak }}</strong>
-        <span>day streak</span>
+        <strong>{{ badges.length }}</strong>
+        <span>badges</span>
       </div>
     </div>
 
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
+    <h2>Your leaderboards</h2>
+    <p class="hint">Points are earned separately in each habit.</p>
+    <p v-if="leaderboards.length === 0" class="hint">Join or create a habit to get on a leaderboard.</p>
+    <ul class="badge-list">
+      <li v-for="{ habit, standing, size } in leaderboards" :key="habit.id" class="list-row">
+        <span class="row-avatar">{{ habit.icon }}</span>
+        <div class="row-text">
+          <strong>{{ habit.name }}<template v-if="standing.rank === 1 && size > 1"> 👑</template></strong>
+          <small>#{{ standing.rank }} of {{ size }} · 🔥 {{ standing.streak }}</small>
+        </div>
+        <span class="points">{{ standing.points }} pts</span>
+      </li>
+    </ul>
+
     <h2>Avatar</h2>
     <EmojiPicker v-model="avatar" :options="AVATARS" label="Avatar" />
 
     <h2>Badges</h2>
-    <p v-if="badges.length === 0" class="hint">No badges yet. Keep a 7-day streak to earn your first 🔥.</p>
+    <p v-if="badges.length === 0" class="hint">
+      No badges yet. Check in {{ STREAK_BONUS_EVERY_CHECK_INS }} times in a row to earn your first 🔥.
+    </p>
     <ul class="badge-list">
       <li v-for="badge in badges" :key="badge.id" class="list-row">
         <span class="row-avatar">{{ BADGES[badge.type].emoji }}</span>
         <div class="row-text">
           <strong>{{ BADGES[badge.type].label }}</strong>
-          <small>{{ BADGES[badge.type].description }} · {{ badge.date }}</small>
+          <small>
+            <template v-if="badge.habitName">{{ badge.habitName }} · </template>{{ BADGES[badge.type].description }} ·
+            {{ badge.date }}
+          </small>
         </div>
       </li>
     </ul>
@@ -126,6 +170,11 @@ const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.points {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .rules {

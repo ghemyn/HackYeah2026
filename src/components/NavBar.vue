@@ -26,10 +26,7 @@ const logOut = () => {
 
       <div v-if="currentUser" class="user-badge">
         <span class="user-avatar" aria-hidden="true">{{ profile?.avatar ?? "…" }}</span>
-        <span>
-          Logged in as <strong>{{ currentUser.nickname }}</strong>
-          <template v-if="profile"> · {{ profile.totalPoints }} pts</template>
-        </span>
+        <span>Logged in as <strong>{{ currentUser.nickname }}</strong></span>
         <button type="button" class="secondary small" @click="logOut">Log out</button>
       </div>
     </nav>

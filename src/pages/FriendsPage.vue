@@ -3,16 +3,13 @@ import { ref } from "vue";
 import { toErrorMessage } from "../common";
 import QrCodeCard from "../components/QrCodeCard.vue";
 import { useFriendProfiles } from "../composables/useFriendProfiles";
-import { useToday } from "../composables/useToday";
 import { addFriend, removeFriend } from "../db/friends";
 import { toUserId } from "../db/users";
-import { currentStreak, isLazySnail } from "../game/progress";
 import { navigate } from "../navigation";
 import { friendCodePayload } from "../scanners/payload";
 import { currentUser, requireUserId } from "../session";
 
 const userId = requireUserId();
-const today = useToday();
 const { friends, loaded, error: loadError } = useFriendProfiles(userId);
 
 const nickname = ref("");
@@ -88,10 +85,6 @@ const remove = (friendId: string, friendNickname: string) => {
         <span class="row-avatar">{{ friend.avatar }}</span>
         <div class="row-text">
           <strong>{{ friend.nickname }}</strong>
-          <small>
-            🔥 {{ currentStreak(friend, today) }} day streak · {{ friend.totalPoints }} pts
-            <template v-if="isLazySnail(friend, today)"> · 🐌 Lazy Snail</template>
-          </small>
         </div>
         <button type="button" class="secondary small danger" :disabled="isBusy" @click="remove(friend.id, friend.nickname)">
           Remove

@@ -1,6 +1,6 @@
-# HabitQuest
+# HabitRivals
 
-HabitQuest turns habits into a game you play with friends. Check in by scanning a habit's QR code or tapping its NFC tag, earn points, and climb the leaderboard. Skip a habit and you pay a fun penalty.
+HabitRivals turns habits into a game you play with friends. Check in by scanning a habit's QR code or tapping its NFC tag, earn points, and climb the leaderboard. Skip a habit and you pay a fun penalty.
 
 Built with Vue 3 + TypeScript + Vite, packaged with Tauri, with Firebase Firestore as the database.
 
@@ -32,13 +32,13 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | Path | Responsibility |
 | --- | --- |
 | `src/App.vue` | Shows the login page, or the navbar plus the current page. Rarely needs changes. |
-| `src/pages/` | One `.vue` file per page (Today, Scan, Friends, Leaderboard, Profile, Login), with its own logic and scoped styles. |
+| `src/pages/` | One `.vue` file per page (Today, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
-| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
+| `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `QrCodeCard`, `EmojiPicker`. |
 | `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`) plus `settlement.ts` (penalties and weekly bonus) and `firebase.ts` (setup). |
 | `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
-| `src/composables/` | Reusable Vue logic: live friend profiles, today's date. |
+| `src/composables/` | Reusable Vue logic: live friend profiles, cached profiles of any player, today's date. |
 | `src/common.ts` | Helpers shared everywhere: UUIDs, dates, error messages, file names. |
 | `src/session.ts` | The logged-in player and their live profile. |
 | `src/navigation.ts` | The current page and `navigate(pageId)`. |
@@ -46,43 +46,36 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 
 ## Game rules
 
-All numbers are in `src/game/rules.ts`.
+All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the account:** every habit has its own global leaderboard of all its members, and everything below is earned or lost in that habit only.
 
 | Action | Points |
 | --- | --- |
 | Check in by scanning the habit's QR code or NFC sticker | +10 |
-| Daily streak reaches 7, 14, 21... days (🔥 badge) | +50 |
-| Strictly more points than every friend last week (👑 badge) | +20 |
-| Each day without any check-in (streak resets) | −5 |
-| 3rd missed day in a row, extra (🐌 Lazy Snail badge) | −15 |
+| Every 7th check-in in a row without a penalty (🔥 badge) | +50 |
+| Daily habit: each day without a check-in (streak resets) | −5 |
+| Daily habit: 3rd missed day in a row, extra (🐌 Lazy Snail badge) | −15 |
+| Weekly habit: each check-in short of the weekly target, charged when the week ends (streak resets) | −5 |
+| Weekly habit: a whole week without check-ins, extra (🐌 Lazy Snail badge) | −15 |
 
-- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it (which also checks them in) or from "Your friends' habits" on the Today page. Members see how their friends are doing in each habit.
+- Habits are shared. Anyone can create one and download or print its QR code. Others join by scanning it (which also checks them in) or from "Your friends' habits" on the Today page.
+- Each habit card shows your points and rank in that habit, your friends' activity, and the full leaderboard (👑 for a clear leader). Leaving a habit drops your points in it.
 - Checking in is only possible by scanning the habit's own QR code or NFC tag. There is no check-in button and codes can't be typed in.
-- One check-in per habit per day.
-- The streak counts days with at least one check-in.
-- Missed-day penalties start after a player's first check-in.
-- There is no server: penalties and the weekly bonus are applied by the player's own app when it starts and before each check-in. They are idempotent, so they are never applied twice.
+- One check-in per player per habit per day.
+- Penalties start the day after joining a daily habit, and with the first full week after joining a weekly habit.
+- There is no server: when any member opens the app or checks in, every member of that habit is charged what they owe. A player who never opens the app still loses points. This is idempotent, so nothing is charged twice. Leaderboards also include penalties that are due but not saved yet.
 
 ## Database (Firestore)
 
 Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local time. Weeks start on Monday.
 
 ### `users/{userId}`
-`userId` is the lowercased nickname.
+`userId` is the lowercased nickname. Accounts hold no points (see `habits.members`).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `nickname` | string | As typed at sign-up |
 | `avatar` | string | Emoji |
-| `totalPoints` | number | All-time points |
-| `weekPoints` | number | Points in the week starting `weekStart` |
-| `weekStart` | string | Monday of the current week |
-| `lastWeekPoints` | number | Points in the week before `weekStart` |
-| `streak` | number | Days in a row with a check-in, as of `lastCheckInDate` |
-| `lastCheckInDate` | string \| null | Last day with any check-in |
 | `createdDate` | string | Sign-up day |
-| `settledThrough` | string | Last day whose missed-day penalty is already applied |
-| `crownedWeek` | string \| null | Monday of the last week the weekly bonus was evaluated for |
 | `createdAt` | timestamp | Server time |
 
 ### `habits/{habitId}`
@@ -96,10 +89,10 @@ Five collections. All dates are `"YYYY-MM-DD"` strings in the player's local tim
 | `tagCode` | string | Secret UUID inside the habit's QR code / NFC sticker |
 | `createdDate` | string | |
 | `memberIds` | string[] | Members' user IDs (used for querying) |
-| `members` | map | `{ [userId]: { joinedDate, lastCheckInDate, weekStart, weekCount, totalCheckIns } }`, each member's progress |
+| `members` | map | `{ [userId]: { joinedDate, lastCheckInDate, weekStart, weekCount, totalCheckIns, points, streak, settledThrough } }`: each member's progress and points in this habit's leaderboard |
 | `createdAt` | timestamp | |
 
-`memberIds` and `members` always contain the same users. The last member to leave deletes the habit.
+`memberIds` and `members` always contain the same users and are always written together in a transaction. `settledThrough` is the last day whose missed check-ins are already charged. The last member to leave deletes the habit.
 
 ### `checkins/{habitId}:{userId}:{date}`
 The document ID guarantees one check-in per player per habit per day.
@@ -119,13 +112,14 @@ Stored in both directions, so adding a friend writes two documents.
 | `userId`, `friendId` | string |
 | `createdAt` | timestamp |
 
-### `badges/{userId}:{type}:{date}`
+### `badges/{userId}:{type}:{date}:{habitId}`
 
 | Field | Type |
 | --- | --- |
 | `userId` | string |
-| `type` | `"streak"`, `"lazySnail"` or `"weeklyWinner"` |
+| `type` | `"streak"` or `"lazySnail"` |
 | `date` | string |
+| `habitId`, `habitName` | string (the name is copied so it survives the habit being deleted) |
 | `createdAt` | timestamp |
 
 ### Queries and indexes

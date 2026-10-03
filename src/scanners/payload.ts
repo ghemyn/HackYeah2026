@@ -1,9 +1,10 @@
-// What HabitQuest QR codes and NFC tags contain:
+// What HabitRivals QR codes and NFC tags contain:
 // - a habit tag: the habit's secret tag code (a plain UUID)
 // - a friend code: "habitquest:friend:<userId>"
 
 import { normalizeUuid } from "../common";
 
+// Keeps the app's original name: changing it would break friend codes that were already shared or printed.
 const FRIEND_PREFIX = "habitquest:friend:";
 
 export type ScanPayload =

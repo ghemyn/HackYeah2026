@@ -60,12 +60,12 @@ const back = () => {
 <template>
   <section class="panel">
     <div class="header">
-      <p class="eyebrow">HabitQuest</p>
+      <p class="eyebrow">HabitRivals</p>
       <h1>{{ step === "nickname" ? "Log in" : "Pick your avatar" }}</h1>
     </div>
 
     <form v-if="step === 'nickname'" class="login-form" @submit.prevent="submitNickname">
-      <p class="hint">Turn your habits into a game with friends. Check in, earn points, climb the leaderboard.</p>
+      <p class="hint">Turn your habits into a game with friends. Check in, earn points, climb each habit's leaderboard.</p>
 
       <label class="field">
         <span>Nickname</span>

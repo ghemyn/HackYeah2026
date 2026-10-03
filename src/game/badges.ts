@@ -1,6 +1,6 @@
-// Badge types and how they are shown. The badges collection stores only the type and date.
+// Badge types and how they are shown. The badges collection stores the type, date and habit.
 
-export type BadgeType = "streak" | "lazySnail" | "weeklyWinner";
+export type BadgeType = "streak" | "lazySnail";
 
 export type BadgeInfo = {
   emoji: string;
@@ -9,9 +9,8 @@ export type BadgeInfo = {
 };
 
 export const BADGES: Record<BadgeType, BadgeInfo> = {
-  streak: { emoji: "🔥", label: "Streak", description: "Checked in 7 days in a row." },
-  lazySnail: { emoji: "🐌", label: "Lazy Snail", description: "Missed 3 days in a row." },
-  weeklyWinner: { emoji: "👑", label: "Weekly winner", description: "Beat every friend last week." },
+  streak: { emoji: "🔥", label: "Streak", description: "7 check-ins in a row without missing." },
+  lazySnail: { emoji: "🐌", label: "Lazy Snail", description: "Skipped a habit for too long." },
 };
 
 export const isBadgeType = (value: unknown): value is BadgeType =>

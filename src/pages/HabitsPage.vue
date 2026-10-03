@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import { toErrorMessage, weekStartKey } from "../common";
+import { toErrorMessage } from "../common";
 import FriendHabits from "../components/FriendHabits.vue";
 import HabitCard from "../components/HabitCard.vue";
 import HabitForm from "../components/HabitForm.vue";
 import { useFriendProfiles } from "../composables/useFriendProfiles";
 import { useToday } from "../composables/useToday";
 import { memberStats, watchHabits, type Habit } from "../db/habits";
-import { currentStreak, isHabitDoneToday, isLazySnail, pointsInWeek } from "../game/progress";
+import { habitStandings, isHabitDoneToday } from "../game/progress";
 import { navigate } from "../navigation";
-import { profile, requireUserId } from "../session";
+import { requireUserId } from "../session";
 
 const userId = requireUserId();
 const today = useToday();
@@ -37,9 +37,18 @@ const doneCount = computed(
   () => habits.value.filter((habit) => isHabitDoneToday(memberStats(habit, userId, today.value), today.value)).length,
 );
 const myHabitIds = computed(() => habits.value.map((habit) => habit.id));
-const weekPoints = computed(() => (profile.value ? pointsInWeek(profile.value, weekStartKey(today.value)) : 0));
-const streak = computed(() => (profile.value ? currentStreak(profile.value, today.value) : 0));
-const lazySnail = computed(() => (profile.value ? isLazySnail(profile.value, today.value) : false));
+// My standing in each habit's own leaderboard.
+const myStandings = computed(() =>
+  habits.value.flatMap((habit) => {
+    const standings = habitStandings(habit, today.value);
+    const mine = standings.find((standing) => standing.userId === userId);
+    return mine ? [{ habit, standing: mine, size: standings.length }] : [];
+  }),
+);
+const firstPlaces = computed(() => myStandings.value.filter(({ standing, size }) => size > 1 && standing.rank === 1).length);
+const lazySnailHabits = computed(() =>
+  myStandings.value.filter(({ standing }) => standing.lazySnail).map(({ habit }) => habit.name),
+);
 </script>
 
 <template>
@@ -51,12 +60,12 @@ const lazySnail = computed(() => (profile.value ? isLazySnail(profile.value, tod
 
     <div class="stats">
       <div class="stat">
-        <strong>{{ weekPoints }}</strong>
-        <span>points this week</span>
+        <strong>{{ habits.length }}</strong>
+        <span>habits joined</span>
       </div>
       <div class="stat">
-        <strong>🔥 {{ streak }}</strong>
-        <span>day streak</span>
+        <strong>👑 {{ firstPlaces }}</strong>
+        <span>leaderboards led</span>
       </div>
       <div class="stat">
         <strong>{{ doneCount }}/{{ habits.length }}</strong>
@@ -64,7 +73,9 @@ const lazySnail = computed(() => (profile.value ? isLazySnail(profile.value, tod
       </div>
     </div>
 
-    <div v-if="lazySnail" class="snail-box">🐌 You're a Lazy Snail! Check in today to shake it off.</div>
+    <div v-if="lazySnailHabits.length > 0" class="snail-box">
+      🐌 You're a Lazy Snail in {{ lazySnailHabits.join(", ") }}! Scan the tag to shake it off.
+    </div>
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
     <div class="actions">

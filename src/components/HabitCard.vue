@@ -4,9 +4,10 @@ import { toErrorMessage } from "../common";
 import { leaveHabit, memberStats, type Habit } from "../db/habits";
 import type { UserProfile } from "../db/users";
 import { MAX_TIMES_PER_WEEK, frequencyLabel } from "../game/catalog";
-import { habitCountThisWeek, isHabitDoneToday } from "../game/progress";
+import { habitCountThisWeek, habitStandings, isHabitDoneToday } from "../game/progress";
 import { navigate } from "../navigation";
 import { isNfcSupported, writeNfcText } from "../scanners/nfcScanner";
+import HabitLeaderboard from "./HabitLeaderboard.vue";
 import HabitMembers from "./HabitMembers.vue";
 import QrCodeCard from "./QrCodeCard.vue";
 
@@ -20,6 +21,7 @@ const props = defineProps<{
 
 const isBusy = ref(false);
 const showTag = ref(false);
+const showLeaderboard = ref(false);
 const message = ref("");
 const errorMessage = ref("");
 const canWriteNfc = isNfcSupported();
@@ -29,6 +31,9 @@ const doneToday = computed(() => isHabitDoneToday(myStats.value, props.today));
 const weekCount = computed(() => habitCountThisWeek(myStats.value, props.today));
 const isLastMember = computed(() => props.habit.memberIds.every((memberId) => memberId === props.userId));
 const weekTarget = computed(() => Math.min(props.habit.timesPerWeek, MAX_TIMES_PER_WEEK));
+const standings = computed(() => habitStandings(props.habit, props.today));
+const myStanding = computed(() => standings.value.find((standing) => standing.userId === props.userId));
+const friendIds = computed(() => props.friends.map((friend) => friend.id));
 
 const run = async (action: () => Promise<void>, fallbackError: string) => {
   if (isBusy.value) {
@@ -57,7 +62,7 @@ const writeTag = () =>
 const leave = () => {
   const warning = isLastMember.value
     ? "You are its last member, so it will be deleted and its QR code and NFC sticker will stop working."
-    : "You can join again later by scanning its tag.";
+    : "Your points in its leaderboard will be lost. You can join again later by scanning its tag.";
 
   if (window.confirm(`Leave "${props.habit.name}"? ${warning}`)) {
     void run(() => leaveHabit(props.userId, props.habit.id), "Leaving the habit failed.");
@@ -80,17 +85,28 @@ const leave = () => {
       <button v-else type="button" class="primary check-in" @click="navigate('scan')">Scan to check in</button>
     </div>
 
+    <p v-if="myStanding" class="standing">
+      <strong>{{ myStanding.points }} pts</strong> · #{{ myStanding.rank }} of {{ standings.length }} · 🔥
+      {{ myStanding.streak }}
+      <template v-if="myStanding.lazySnail"> · 🐌 Lazy Snail — scan the tag to shake it off!</template>
+    </p>
+
     <HabitMembers :habit="habit" :friends="friends" :user-id="userId" :today="today" />
 
     <p v-if="message" class="habit-message">{{ message }}</p>
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
     <div class="habit-tools">
+      <button type="button" class="secondary small" @click="showLeaderboard = !showLeaderboard">
+        {{ showLeaderboard ? "Hide leaderboard" : "Leaderboard" }}
+      </button>
       <button type="button" class="secondary small" @click="showTag = !showTag">
         {{ showTag ? "Hide tag" : "QR / NFC tag" }}
       </button>
       <button type="button" class="secondary small danger" :disabled="isBusy" @click="leave">Leave</button>
     </div>
+
+    <HabitLeaderboard v-if="showLeaderboard" :habit="habit" :user-id="userId" :friend-ids="friendIds" :today="today" />
 
     <div v-if="showTag" class="habit-tag">
       <p class="hint">
@@ -155,6 +171,15 @@ const leave = () => {
   font-weight: 700;
   color: #86efac;
   white-space: nowrap;
+}
+
+.standing {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.standing strong {
+  color: white;
 }
 
 .habit-message {

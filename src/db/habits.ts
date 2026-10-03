@@ -1,9 +1,5 @@
 import {
-  FieldPath,
-  arrayRemove,
-  arrayUnion,
   collection,
-  deleteField,
   doc,
   getDocs,
   limit,
@@ -20,7 +16,7 @@ import { generateUuid, todayKey, type DateKey } from "../common";
 import { DEFAULT_HABIT_ICON, MAX_TIMES_PER_WEEK } from "../game/catalog";
 import { COLLECTIONS, db, readNumber, readOptionalString, readString } from "./firebase";
 
-// One member's progress in a shared habit.
+// One member's progress in a shared habit. Points live here: each habit has its own leaderboard.
 export type HabitMemberStats = {
   joinedDate: DateKey;
   lastCheckInDate: DateKey | null;
@@ -28,6 +24,12 @@ export type HabitMemberStats = {
   weekStart: DateKey | null;
   weekCount: number;
   totalCheckIns: number;
+  // This member's points in this habit's leaderboard.
+  points: number;
+  // Check-ins since the last penalty in this habit.
+  streak: number;
+  // Last day whose missed check-ins are already charged (see settleMember in game/progress.ts).
+  settledThrough: DateKey;
 };
 
 // Habits are shared: anyone can join one, and every member checks in by scanning the same tag.
@@ -58,15 +60,15 @@ const MAX_ARRAY_CONTAINS_ANY = 30;
 
 export const habitRef = (habitId: string) => doc(db, COLLECTIONS.habits, habitId);
 
-// Path to one member's stats. A FieldPath is needed because user IDs may contain ".".
-export const memberStatsPath = (userId: string) => new FieldPath("members", userId);
-
 export const newMemberStats = (today: DateKey): HabitMemberStats => ({
   joinedDate: today,
   lastCheckInDate: null,
   weekStart: null,
   weekCount: 0,
   totalCheckIns: 0,
+  points: 0,
+  streak: 0,
+  settledThrough: today,
 });
 
 const toMemberStats = (value: unknown, fallbackDate: DateKey): HabitMemberStats => {
@@ -78,6 +80,9 @@ const toMemberStats = (value: unknown, fallbackDate: DateKey): HabitMemberStats 
     weekStart: readOptionalString(data.weekStart),
     weekCount: readNumber(data.weekCount),
     totalCheckIns: readNumber(data.totalCheckIns),
+    points: readNumber(data.points),
+    streak: readNumber(data.streak),
+    settledThrough: readString(data.settledThrough, fallbackDate),
   };
 };
 
@@ -109,6 +114,12 @@ export const toHabit = (id: string, data: DocumentData): Habit => {
 export const isHabitMember = (habit: Pick<Habit, "memberIds">, userId: string): boolean =>
   habit.memberIds.includes(userId);
 
+// The fields that hold membership. They are always written together, inside a transaction.
+export const membershipData = (members: Record<string, HabitMemberStats>) => ({
+  memberIds: Object.keys(members),
+  members,
+});
+
 // A member's stats, or empty stats for someone who has not joined.
 export const memberStats = (habit: Pick<Habit, "members">, userId: string, today: DateKey): HabitMemberStats =>
   habit.members[userId] ?? newMemberStats(today);
@@ -127,8 +138,7 @@ export const createHabit = async (userId: string, habit: NewHabit): Promise<void
     timesPerWeek: habit.timesPerWeek,
     tagCode: generateUuid(),
     createdDate: today,
-    memberIds: [userId],
-    members: { [userId]: newMemberStats(today) },
+    ...membershipData({ [userId]: newMemberStats(today) }),
     createdAt: serverTimestamp(),
   });
 };
@@ -141,14 +151,16 @@ export const joinHabit = (userId: string, habitId: string): Promise<void> =>
       throw new Error("This habit no longer exists.");
     }
 
-    if (isHabitMember(toHabit(snapshot.id, snapshot.data()), userId)) {
+    const habit = toHabit(snapshot.id, snapshot.data());
+
+    if (isHabitMember(habit, userId)) {
       return;
     }
 
-    transaction.update(snapshot.ref, memberStatsPath(userId), newMemberStats(todayKey()), "memberIds", arrayUnion(userId));
+    transaction.update(snapshot.ref, membershipData({ ...habit.members, [userId]: newMemberStats(todayKey()) }));
   });
 
-// Removes the player from the habit. The last member to leave deletes it, which also retires its tag.
+// Removes the player and their points from the habit. The last member to leave deletes it, which also retires its tag.
 export const leaveHabit = (userId: string, habitId: string): Promise<void> =>
   runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(habitRef(habitId));
@@ -168,7 +180,9 @@ export const leaveHabit = (userId: string, habitId: string): Promise<void> =>
       return;
     }
 
-    transaction.update(snapshot.ref, memberStatsPath(userId), deleteField(), "memberIds", arrayRemove(userId));
+    const members = { ...habit.members };
+    delete members[userId];
+    transaction.update(snapshot.ref, membershipData(members));
   });
 
 // Live list of the habits a player is a member of, oldest first.

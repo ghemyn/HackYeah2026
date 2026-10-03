@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hackyeah2026",
+  "productName": "HabitRivals",
   "version": "0.1.0",
   "identifier": "com.dwarfs.hackyeah2026",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "hackyeah2026",
+        "title": "HabitRivals",
         "width": 800,
         "height": 600
       }

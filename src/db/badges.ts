@@ -8,17 +8,27 @@ export type Badge = {
   userId: string;
   type: BadgeType;
   date: DateKey;
+  // The habit the badge was earned in. The name is copied so it survives the habit being deleted.
+  habitId: string;
+  habitName: string;
 };
 
-// At most one badge of each type per player per day, so writing the same badge twice is harmless.
-// ":" cannot appear in user IDs, so the document IDs never collide.
-export const badgeRef = (userId: string, type: BadgeType, date: DateKey) =>
-  doc(db, COLLECTIONS.badges, `${userId}:${type}:${date}`);
+type BadgeHabit = {
+  id: string;
+  name: string;
+};
 
-export const badgeData = (userId: string, type: BadgeType, date: DateKey) => ({
+// At most one badge of each type per player, habit and day, so writing the same badge twice is harmless.
+// ":" cannot appear in user IDs, badge types, dates or habit IDs (UUIDs), so the document IDs never collide.
+export const badgeRef = (userId: string, type: BadgeType, date: DateKey, habit: BadgeHabit) =>
+  doc(db, COLLECTIONS.badges, `${userId}:${type}:${date}:${habit.id}`);
+
+export const badgeData = (userId: string, type: BadgeType, date: DateKey, habit: BadgeHabit) => ({
   userId,
   type,
   date,
+  habitId: habit.id,
+  habitName: habit.name,
   createdAt: serverTimestamp(),
 });
 
@@ -37,7 +47,14 @@ export const watchBadges = (
         const data = badgeDoc.data();
 
         if (isBadgeType(data.type)) {
-          badges.push({ id: badgeDoc.id, userId: readString(data.userId), type: data.type, date: readString(data.date) });
+          badges.push({
+            id: badgeDoc.id,
+            userId: readString(data.userId),
+            type: data.type,
+            date: readString(data.date),
+            habitId: readString(data.habitId),
+            habitName: readString(data.habitName),
+          });
         }
       }
 

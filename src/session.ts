@@ -9,6 +9,7 @@ type SessionUser = {
   nickname: string;
 };
 
+// Keeps the app's original name: changing it would log everyone out.
 const STORAGE_KEY = "habitquest.user";
 
 const readStoredUser = (): SessionUser | null => {

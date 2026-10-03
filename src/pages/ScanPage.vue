@@ -61,7 +61,7 @@ const processScan = async (rawValue: string, source: CheckInMethod) => {
 
       outcome.value = { kind: "check-in", result: await checkIn(userId, habit.id, source) };
     } else {
-      throw new Error("This is not a HabitQuest habit tag or friend code.");
+      throw new Error("This is not a HabitRivals habit tag or friend code.");
     }
 
     status.value = isNfcActive.value ? "Done. Tap another NFC tag or scan again." : "Done.";
@@ -160,8 +160,10 @@ onBeforeUnmount(() => {
           <p v-if="outcome.result.joined">You joined this habit!</p>
           <p v-if="outcome.result.status === 'already-done'">Already checked in today.</p>
           <p v-else>
-            Checked in! +{{ outcome.result.points }} points · 🔥 {{ outcome.result.streak }} day streak
-            <template v-if="outcome.result.streakBonus"> · streak bonus!</template>
+            Checked in! +{{ outcome.result.points }} points
+            <template v-if="outcome.result.streakBonus"> (🔥 streak bonus!)</template>
+            · now {{ outcome.result.habitPoints }} pts, #{{ outcome.result.rank }} in this habit · 🔥
+            {{ outcome.result.streak }}
           </p>
         </div>
       </template>

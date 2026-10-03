@@ -13,7 +13,6 @@ export const pages: PageDefinition[] = [
   { id: "today", label: "Today", component: defineAsyncComponent(() => import("./HabitsPage.vue")) },
   { id: "scan", label: "Scan", component: defineAsyncComponent(() => import("./ScanPage.vue")) },
   { id: "friends", label: "Friends", component: defineAsyncComponent(() => import("./FriendsPage.vue")) },
-  { id: "leaderboard", label: "Leaderboard", component: defineAsyncComponent(() => import("./LeaderboardPage.vue")) },
   { id: "profile", label: "Profile", component: defineAsyncComponent(() => import("./ProfilePage.vue")) },
   // TODO(challenges): challengesPage.vue is still empty, and an empty .vue file fails the build.
   // Re-enable this line once the page has content. The path must match the file name's case exactly.
