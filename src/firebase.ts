@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { doc, getDoc, getFirestore, setDoc } from "firebase/firestore";
+import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -34,4 +34,23 @@ export const findTag = async (uuid: string): Promise<TagRecord | null> => {
 
   const data = snapshot.data();
   return { uuid, name: String(data.name ?? "") };
+};
+
+// Users are keyed by their lowercased nickname so "Alice" and "alice" are the same account.
+const USERS_COLLECTION = "users";
+
+export type UserRecord = {
+  nickname: string;
+};
+
+export const loginUser = async (nickname: string): Promise<{ user: UserRecord; created: boolean }> => {
+  const userRef = doc(db, USERS_COLLECTION, nickname.toLowerCase());
+  const snapshot = await getDoc(userRef);
+
+  if (snapshot.exists()) {
+    return { user: { nickname: String(snapshot.data().nickname ?? nickname) }, created: false };
+  }
+
+  await setDoc(userRef, { nickname, createdAt: serverTimestamp() });
+  return { user: { nickname }, created: true };
 };

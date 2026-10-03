@@ -23,14 +23,34 @@ button {
   padding: 24px;
 }
 
-.tabs {
+.navbar {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   width: min(100%, 720px);
 }
 
-.tabs button {
-  flex: 1;
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+}
+
+.user-badge strong {
+  color: white;
+}
+
+.user-badge .logout {
+  padding: 0.5rem 0.9rem;
 }
 
 .panel {
@@ -186,6 +206,16 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .navbar,
+  .user-badge {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-badge {
+    text-align: center;
+  }
+
   .panel {
     padding: 18px;
   }

@@ -2,7 +2,9 @@
 import { onBeforeUnmount, ref } from "vue";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import QrGenerator from "./components/QrGenerator.vue";
+import LoginForm from "./components/LoginForm.vue";
 import { findTag } from "./firebase";
+import { currentUser, setCurrentUser } from "./session";
 
 type NfcRecord = {
   recordType: string;
@@ -210,6 +212,13 @@ const switchToGenerate = async () => {
   await stopNfcScan();
 };
 
+const logout = async () => {
+  stopQrScanner();
+  await stopNfcScan();
+  view.value = "scan";
+  setCurrentUser(null);
+};
+
 onBeforeUnmount(async () => {
   stopQrScanner();
   await stopNfcScan();
@@ -218,50 +227,61 @@ onBeforeUnmount(async () => {
 
 <template>
   <main class="app-shell">
-    <nav class="tabs">
-      <button type="button" :class="view === 'scan' ? 'primary' : 'secondary'" @click="view = 'scan'">Scan</button>
-      <button type="button" :class="view === 'generate' ? 'primary' : 'secondary'" @click="switchToGenerate">
-        Generate
-      </button>
-    </nav>
+    <LoginForm v-if="!currentUser" />
 
-    <QrGenerator v-if="view === 'generate'" />
-
-    <section v-show="view === 'scan'" class="panel">
-      <div class="header">
-        <p class="eyebrow">UUID reader</p>
-        <h1>Scan a unique identifier</h1>
-      </div>
-
-      <div class="actions">
-        <button type="button" class="primary" @click="startQrScan">Scan QR code</button>
-        <button type="button" class="secondary" @click="startNfcScan">Scan NFC tag</button>
-      </div>
-
-      <div class="status-row">
-        <span class="status-pill">{{ status }}</span>
-      </div>
-
-      <div v-if="errorMessage" class="error-box">
-        {{ errorMessage }}
-      </div>
-
-      <div id="qr-reader" ref="qrScannerElement" class="scanner-box" aria-live="polite"></div>
-
-      <div class="uuid-card">
-        <label>Captured UUID</label>
-        <div class="uuid-value">{{ uuid || "No UUID captured yet" }}</div>
-        <small>Source: {{ source }}</small>
-        <div v-if="lookup !== 'idle'" class="lookup" :class="lookup">
-          <template v-if="lookup === 'checking'">Checking database...</template>
-          <template v-else-if="lookup === 'found'">
-            <span>Registered as</span>
-            <strong>{{ tagName }}</strong>
-          </template>
-          <template v-else-if="lookup === 'missing'">This UUID is not registered in the database.</template>
-          <template v-else>Could not verify this UUID.</template>
+    <template v-else>
+      <nav class="navbar">
+        <div class="tabs">
+          <button type="button" :class="view === 'scan' ? 'primary' : 'secondary'" @click="view = 'scan'">Scan</button>
+          <button type="button" :class="view === 'generate' ? 'primary' : 'secondary'" @click="switchToGenerate">
+            Generate
+          </button>
         </div>
-      </div>
-    </section>
+
+        <div class="user-badge">
+          <span>Logged in as <strong>{{ currentUser.nickname }}</strong></span>
+          <button type="button" class="secondary logout" @click="logout">Log out</button>
+        </div>
+      </nav>
+
+      <QrGenerator v-if="view === 'generate'" />
+
+      <section v-show="view === 'scan'" class="panel">
+        <div class="header">
+          <p class="eyebrow">UUID reader</p>
+          <h1>Scan a unique identifier</h1>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" @click="startQrScan">Scan QR code</button>
+          <button type="button" class="secondary" @click="startNfcScan">Scan NFC tag</button>
+        </div>
+
+        <div class="status-row">
+          <span class="status-pill">{{ status }}</span>
+        </div>
+
+        <div v-if="errorMessage" class="error-box">
+          {{ errorMessage }}
+        </div>
+
+        <div id="qr-reader" ref="qrScannerElement" class="scanner-box" aria-live="polite"></div>
+
+        <div class="uuid-card">
+          <label>Captured UUID</label>
+          <div class="uuid-value">{{ uuid || "No UUID captured yet" }}</div>
+          <small>Source: {{ source }}</small>
+          <div v-if="lookup !== 'idle'" class="lookup" :class="lookup">
+            <template v-if="lookup === 'checking'">Checking database...</template>
+            <template v-else-if="lookup === 'found'">
+              <span>Registered as</span>
+              <strong>{{ tagName }}</strong>
+            </template>
+            <template v-else-if="lookup === 'missing'">This UUID is not registered in the database.</template>
+            <template v-else>Could not verify this UUID.</template>
+          </div>
+        </div>
+      </section>
+    </template>
   </main>
 </template>
