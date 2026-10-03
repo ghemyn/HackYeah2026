@@ -7,6 +7,8 @@ import LoginPage from "./pages/LoginPage.vue";
 import { currentUser } from "./session";
 
 const currentPage = computed(() => findPage(currentPageId.value));
+
+console.log(import.meta.env.VITE_FIREBASE_PROJECT_ID);
 </script>
 
 <template>
