@@ -43,13 +43,32 @@ const fromDateKey = (key: DateKey): Date => {
   return new Date(year, month - 1, day);
 };
 
-export const todayKey = (): DateKey => toDateKey(new Date());
-
 export const addDays = (key: DateKey, days: number): DateKey => {
   const date = fromDateKey(key);
   date.setDate(date.getDate() + days);
   return toDateKey(date);
 };
+
+// Date emulation for testing (see components/DebugMenu.vue): days added to the real date.
+// Not saved, so reloading the app goes back to the real date.
+let dayOffset = 0;
+const dayOffsetListeners = new Set<() => void>();
+
+export const getDayOffset = (): number => dayOffset;
+
+export const setDayOffset = (days: number) => {
+  dayOffset = days;
+  dayOffsetListeners.forEach((listener) => listener());
+};
+
+// Returns a function that stops listening.
+export const onDayOffsetChange = (listener: () => void): (() => void) => {
+  dayOffsetListeners.add(listener);
+  return () => dayOffsetListeners.delete(listener);
+};
+
+// Today in local time, moved by the emulated day offset. Every date the app shows or saves comes from here.
+export const todayKey = (): DateKey => addDays(toDateKey(new Date()), dayOffset);
 
 // Whole days from `from` to `to` (negative if `to` is earlier). Rounding absorbs daylight-saving shifts.
 export const daysBetween = (from: DateKey, to: DateKey): number =>

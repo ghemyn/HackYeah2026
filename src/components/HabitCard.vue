@@ -29,7 +29,6 @@ const props = defineProps<{
 
 const isBusy = ref(false);
 const showTag = ref(false);
-const showLeaderboard = ref(false);
 const message = ref("");
 const errorMessage = ref("");
 const canWriteNfc = isNfcSupported();
@@ -113,17 +112,38 @@ const leave = () => {
     <p v-if="message" class="habit-message">{{ message }}</p>
     <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
 
-    <div class="habit-tools">
-      <button type="button" class="secondary small" @click="showLeaderboard = !showLeaderboard">
-        {{ showLeaderboard ? "Hide leaderboard" : "Leaderboard" }}
-      </button>
-      <button type="button" class="secondary small" @click="showTag = !showTag">
-        {{ showTag ? "Hide tag" : "QR / NFC tag" }}
-      </button>
-      <button type="button" class="secondary small danger" :disabled="isBusy" @click="leave">Leave</button>
-    </div>
+    <HabitLeaderboard :habit="habit" :user-id="userId" :friend-ids="friendIds" :today="today" />
 
-    <HabitLeaderboard v-if="showLeaderboard" :habit="habit" :user-id="userId" :friend-ids="friendIds" :today="today" />
+    <div class="habit-tools">
+      <button
+        type="button"
+        class="secondary tool-button qr-button"
+        :class="{ active: showTag }"
+        :aria-label="showTag ? 'Hide the QR code and NFC tag' : 'Show the QR code and NFC tag'"
+        :title="showTag ? 'Hide QR code' : 'QR code / NFC tag'"
+        :aria-expanded="showTag"
+        @click="showTag = !showTag"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z" fill="none" stroke="currentColor" stroke-width="2" />
+          <path d="M5.5 5.5h2v2h-2zM16.5 5.5h2v2h-2zM5.5 16.5h2v2h-2z" fill="currentColor" />
+          <path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 14h3v2h-3zM14 18h2v3h-2z" fill="currentColor" />
+        </svg>
+      </button>
+      <button type="button" class="tool-button leave-button" :disabled="isBusy" @click="leave">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M15 8l4 4-4 4M19 12H9"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>Leave</span>
+      </button>
+    </div>
 
     <div v-if="showTag" class="habit-tag">
       <p class="hint">
@@ -142,11 +162,10 @@ const leave = () => {
 </template>
 
 <style scoped>
-.habit-progress { height:4px; background:var(--line); overflow:hidden; }
+.habit-progress { height:12px; border-radius:6px; background:var(--line); overflow:hidden; }
 .habit-progress span { display:block; height:100%; background:var(--ink); transition:width 300ms ease, background 250ms; }
 .done .habit-progress span { background:var(--lime); }
 .habit-card { transition:background 250ms; }
-.habit-tools button { padding:5px 8px; background:transparent; border-color:transparent; font-size:.75rem; }
 .habit-card {
   display: flex;
   flex-direction: column;
@@ -225,8 +244,48 @@ const leave = () => {
 
 .habit-tools {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* At least 44px high, the recommended size for touch targets. */
+.tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+}
+
+.tool-button svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.qr-button {
+  width: 44px;
+  padding: 0;
+}
+
+.qr-button.active {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.leave-button {
+  color: #a62e18;
+  border-color: #a62e18;
+}
+
+.leave-button:hover:not(:disabled) {
+  background: #ffe6dc;
 }
 
 .habit-tag {

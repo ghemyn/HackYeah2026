@@ -13,6 +13,8 @@ npm run tauri dev    # desktop app
 npm run build        # type-check + production build
 ```
 
+**Debug menu.** In development (`npm run dev`, `npm run tauri dev`) a see-through menu in the bottom-left corner moves the app's date a day forwards or backwards, to test schedules, penalties and taunts. Everything saved meanwhile (check-ins, penalties, taunts) uses the emulated date, so use test habits and accounts. Reloading goes back to the real date. To show it in a production build, set `VITE_DEBUG_MENU=true`.
+
 Firebase config goes in `.env.local` (gitignored). Also follow the Firebase setup checklist under "Security" below.
 
 ```
@@ -63,7 +65,8 @@ All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the a
   - **X times every Y days** (X ≤ 20, Y ≤ 31; X may exceed Y, e.g. "3 times a day"). Cycles of Y days start on the habit's creation date and are the same for every member. At most X ÷ Y check-ins (rounded up) are allowed per day. Once X check-ins are done, the next one waits for the next cycle.
   - **On set weekdays** (any combination of Mon–Sun). Check-ins are only possible on those days.
 - Penalties start after joining: for weekday schedules from the day after joining, for interval schedules with the first cycle that starts after the joining day.
-- **Taunts.** The habit's leader (👑) can taunt members who haven't checked in today but still can, from the habit's leaderboard: 1–5 emojis plus an optional message (up to 100 characters). The taunted player sees it live above that habit's card, and everyone sees "Taunted" next to them in the leaderboard. It stays until they check in (scanning cancels it in the same transaction) or leave the habit. A new taunt at the same player in the same habit replaces the old one. Taunts cost no points.
+- **Damage.** When a player's points in a habit dropped through penalties since they last looked (each device remembers the last points it showed), a "−X pts" card pops up over that habit's card, stays for 2 seconds and then fades out over 2 seconds.
+- **Taunts.** The habit's leader (👑) can taunt members who haven't checked in today but still can, from the habit's leaderboard: 1–5 emojis plus an optional message (up to 100 characters). The taunted player sees it live, animated over that habit's card (it can be shrunk to a badge that slowly circles the card), and everyone sees "Taunted" next to them in the leaderboard. It stays until they check in (scanning cancels it in the same transaction) or leave the habit. A new taunt at the same player in the same habit replaces the old one. Taunts cost no points.
 - There is no server: when any member opens the app or checks in, every member of that habit is charged what they owe. A player who never opens the app still loses points. This is idempotent, so nothing is charged twice. Leaderboards also include penalties that are due but not saved yet.
 
 ## Database (Firestore)

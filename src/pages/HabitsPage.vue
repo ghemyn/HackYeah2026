@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 import { toErrorMessage } from "../common";
 import RivalScoreboard from "../components/RivalScoreboard.vue";
+import DamageBanner from "../components/DamageBanner.vue";
 import FriendHabits from "../components/FriendHabits.vue";
 import HabitCard from "../components/HabitCard.vue";
 import HabitForm from "../components/HabitForm.vue";
 import TauntBanner from "../components/TauntBanner.vue";
 import { useFriendProfiles } from "../composables/useFriendProfiles";
+import { usePenaltyAlerts } from "../composables/usePenaltyAlerts";
 import { useToday } from "../composables/useToday";
 import { memberStats, watchHabits, type Habit } from "../db/habits";
 import { watchTauntsAt, type Taunt } from "../db/taunts";
@@ -36,7 +38,7 @@ const stopWatching = watchHabits(
   },
 );
 
-// Taunts at the player, by habit. Shown above the habit's card until they check in.
+// Taunts at the player, by habit. Laid over the habit's card until they check in.
 const taunts = ref<Record<string, Taunt>>({});
 
 const stopWatchingTaunts = watchTauntsAt(
@@ -49,6 +51,9 @@ const stopWatchingTaunts = watchTauntsAt(
     tauntError.value = toErrorMessage(error, "Taunts could not be loaded.");
   },
 );
+
+// Points lost to missed check-ins since the player last looked, shown briefly over the habit's card.
+const { alerts: penaltyAlerts, dismiss: dismissPenaltyAlert } = usePenaltyAlerts(userId, habits, today);
 
 onBeforeUnmount(() => {
   stopWatching();
@@ -93,8 +98,17 @@ const actionableCount = computed(() => habits.value.filter(habit => !checkInBloc
 
     <TransitionGroup name="lineup" tag="div" class="habit-list">
       <div v-for="habit in habits" :key="habit.id" class="habit-entry">
-        <TauntBanner v-if="taunts[habit.id]" :taunt="taunts[habit.id]" :today="today" />
         <HabitCard :habit="habit" :user-id="userId" :friends="friends" :today="today" />
+        <!-- Laid over the card; fades out when a check-in cancels it. -->
+        <Transition name="taunt-fade">
+          <TauntBanner v-if="taunts[habit.id]" :taunt="taunts[habit.id]" :today="today" />
+        </Transition>
+        <DamageBanner
+          v-if="penaltyAlerts[habit.id]"
+          :key="penaltyAlerts[habit.id].id"
+          :alert="penaltyAlerts[habit.id]"
+          @done="dismissPenaltyAlert(habit.id, penaltyAlerts[habit.id].id)"
+        />
       </div>
     </TransitionGroup>
 
@@ -121,9 +135,16 @@ const actionableCount = computed(() => habits.value.filter(habit => !checkInBloc
   gap: 0;
 }
 
+/* The taunt is laid over the card. */
 .habit-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  position: relative;
+}
+
+.taunt-fade-leave-active {
+  transition: opacity 300ms ease;
+}
+
+.taunt-fade-leave-to {
+  opacity: 0;
 }
 </style>
