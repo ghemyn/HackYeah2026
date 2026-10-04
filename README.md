@@ -13,7 +13,7 @@ npm run tauri dev    # desktop app
 npm run build        # type-check + production build
 ```
 
-**Debug menu.** In development (`npm run dev`, `npm run tauri dev`) a see-through menu in the bottom-left corner moves the app's date a day forwards or backwards, to test schedules, penalties and taunts. Everything saved meanwhile (check-ins, penalties, taunts) uses the emulated date, so use test habits and accounts. Reloading goes back to the real date. To show it in a production build, set `VITE_DEBUG_MENU=true`.
+**Debug menu.** In every build, development and production, a see-through menu in the bottom-left corner moves the app's date a day forwards or backwards, to test schedules, penalties and taunts. Everything saved meanwhile (check-ins, penalties, taunts) uses the emulated date, so use test habits and accounts. Reloading goes back to the real date. Anyone using the app can open it. To hide it in a build (e.g. the final release), set `VITE_DEBUG_MENU=false`.
 
 Firebase config goes in `.env.local` (gitignored). Also follow the Firebase setup checklist under "Security" below.
 

@@ -14,6 +14,14 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// 1. Read signing credentials from key.properties if present
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile.exists()) {
+        keyPropertiesFile.inputStream().use { load(it) }
+    }
+}
+
 android {
     compileSdk = 37
     namespace = "com.dwarfs.hackyeah2026"
@@ -25,6 +33,20 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+
+    // 2. Configure release signing
+    signingConfigs {
+        create("release") {
+            keyAlias = keyProperties.getProperty("keyAlias")
+            keyPassword = keyProperties.getProperty("keyPassword")
+            storePassword = keyProperties.getProperty("storePassword")
+            val storeFilePath = keyProperties.getProperty("storeFile")
+            if (!storeFilePath.isNullOrEmpty()) {
+                storeFile = rootProject.file(storeFilePath)
+            }
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -39,6 +61,10 @@ android {
             }
         }
         getByName("release") {
+            // 3. Attach release signing config if key.properties exists
+            if (keyPropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

@@ -9,8 +9,8 @@ import { authReady, currentUser } from "./session";
 
 const currentPage = computed(() => findPage(currentPageId.value));
 
-// Date emulation for testing: in development, or in builds with VITE_DEBUG_MENU=true.
-const showDebugMenu = import.meta.env.DEV || import.meta.env.VITE_DEBUG_MENU === "true";
+// Date emulation for testing, shown in development and production. A build with VITE_DEBUG_MENU=false hides it.
+const showDebugMenu = import.meta.env.VITE_DEBUG_MENU !== "false";
 
 </script>
 

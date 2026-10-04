@@ -31,7 +31,7 @@ const reset = () => {
 </script>
 
 <template>
-  <aside class="debug-menu" :class="{ emulated: offset !== 0 }" aria-label="Debug menu">
+  <aside class="debug-menu" :class="{ emulated: offset !== 0, closed: !isOpen }" aria-label="Debug menu">
     <button
       type="button"
       class="debug-toggle"
@@ -73,6 +73,11 @@ const reset = () => {
   opacity: 0.75;
   backdrop-filter: blur(2px);
   transition: opacity 180ms;
+}
+
+/* Barely there while closed; hovering or focusing it still shows it fully. */
+.debug-menu.closed {
+  opacity: 0.25;
 }
 
 .debug-menu:hover,
