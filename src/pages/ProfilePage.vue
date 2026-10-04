@@ -134,7 +134,8 @@ const formatPoints = (points: number) => (points > 0 ? `+${points}` : `${points}
 
     <h2>Badges</h2>
     <p v-if="badges.length === 0" class="hint">
-      No badges yet. Check in {{ STREAK_BONUS_EVERY_CHECK_INS }} times in a row to earn your first 🔥.
+      No badges yet. Join a habit, check in, add friends or check in {{ STREAK_BONUS_EVERY_CHECK_INS }} times in a row
+      to earn your first ones.
     </p>
     <ul class="badge-list">
       <li v-for="badge in badges" :key="badge.id" class="list-row">

@@ -4,6 +4,7 @@ import type { Unsubscribe } from "firebase/firestore";
 import { toErrorMessage } from "./common";
 import { registerWithNickname, signInWithNickname, signOutPlayer } from "./db/auth";
 import { auth } from "./db/firebase";
+import { watchMilestones } from "./db/milestones";
 import { settleAccount } from "./db/settlement";
 import { findUserByUid, watchUser, type UserProfile } from "./db/users";
 
@@ -112,12 +113,15 @@ export const requireUserId = (): string => {
 };
 
 let stopWatchingProfile: Unsubscribe | null = null;
+let stopAwardingMilestones: Unsubscribe | null = null;
 
 watch(
   () => currentUser.value?.id ?? null,
   (userId) => {
     stopWatchingProfile?.();
     stopWatchingProfile = null;
+    stopAwardingMilestones?.();
+    stopAwardingMilestones = null;
     profile.value = null;
 
     if (!userId) {
@@ -139,6 +143,10 @@ watch(
         sessionError.value = toErrorMessage(error, "Your profile could not be loaded.");
       },
     );
+
+    stopAwardingMilestones = watchMilestones(userId, (error) => {
+      sessionError.value = toErrorMessage(error, "Milestone badges could not be updated.");
+    });
 
     settleAccount(userId).catch((error: unknown) => {
       sessionError.value = toErrorMessage(error, "Penalties and bonuses could not be updated.");

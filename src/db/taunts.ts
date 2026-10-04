@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { todayKey, type DateKey } from "../common";
 import { tauntBlocker, validateTaunt } from "../game/taunts";
+import { milestoneData, milestoneRef } from "./badges";
 import { COLLECTIONS, db, readString } from "./firebase";
 import { habitRef, tauntRef, toHabit } from "./habits";
 
@@ -58,14 +59,18 @@ export const sendTaunt = (
 
     // Reading the habit in the transaction means the taunt is refused if the target checks in
     // or the sender loses the lead meanwhile.
-    const snapshot = await transaction.get(habitRef(habitId));
+    const [snapshot, firstTauntSnapshot] = await Promise.all([
+      transaction.get(habitRef(habitId)),
+      transaction.get(milestoneRef(fromId, "firstTaunt")),
+    ]);
 
     if (!snapshot.exists()) {
       throw new Error("This habit no longer exists.");
     }
 
     const today = todayKey();
-    const blocker = tauntBlocker(toHabit(snapshot.id, snapshot.data()), fromId, targetId, today);
+    const habit = toHabit(snapshot.id, snapshot.data());
+    const blocker = tauntBlocker(habit, fromId, targetId, today);
 
     if (blocker) {
       throw new Error(blocker);
@@ -80,6 +85,10 @@ export const sendTaunt = (
       date: today,
       createdAt: serverTimestamp(),
     });
+
+    if (!firstTauntSnapshot.exists()) {
+      transaction.set(firstTauntSnapshot.ref, milestoneData(fromId, "firstTaunt", today, habit));
+    }
   });
 
 const watchTaunts = (

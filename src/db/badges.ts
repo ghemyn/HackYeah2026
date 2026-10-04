@@ -1,6 +1,7 @@
 import { collection, doc, onSnapshot, query, serverTimestamp, where, type Unsubscribe } from "firebase/firestore";
 import type { DateKey } from "../common";
 import { isBadgeType, type BadgeType } from "../game/badges";
+import type { MilestoneType } from "../game/milestones";
 import { COLLECTIONS, db, readString } from "./firebase";
 
 export type Badge = {
@@ -29,6 +30,19 @@ export const badgeData = (userId: string, type: BadgeType, date: DateKey, habit:
   date,
   habitId: habit.id,
   habitName: habit.name,
+  createdAt: serverTimestamp(),
+});
+
+// Milestones are earned once per player, so their ID has no date or habit (the type alone is unique).
+export const milestoneRef = (userId: string, type: MilestoneType) => doc(db, COLLECTIONS.badges, `${userId}:${type}`);
+
+// `habit` is where the milestone was reached, if it belongs to one.
+export const milestoneData = (userId: string, type: MilestoneType, date: DateKey, habit: BadgeHabit | null) => ({
+  userId,
+  type,
+  date,
+  habitId: habit?.id ?? "",
+  habitName: habit?.name ?? "",
   createdAt: serverTimestamp(),
 });
 

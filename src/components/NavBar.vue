@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { navigate, currentPageId } from "../navigation";
 import { pages } from "../pages";
-import { currentUser, logout, profile, sessionError } from "../session";
+import { sessionError } from "../session";
+import ProfileMenu from "./ProfileMenu.vue";
 
-const logOut = () => {
-  void logout();
-  navigate(pages[0].id);
-};
+const tabs = pages.filter((page) => !page.hideTab);
 </script>
 
 <template>
   <header class="navbar-wrap">
-    <div class="brand">HABIT<span>RIVALS</span><small>SHOW UP / TOGETHER</small></div>
+    <div class="brand-row">
+      <div class="brand">HABIT<span>RIVALS</span></div>
+
+      <ProfileMenu />
+    </div>
     <nav class="navbar" aria-label="Main navigation">
       <div class="tabs">
         <button
-          v-for="page in pages"
+          v-for="page in tabs"
           :key="page.id"
           type="button"
           :aria-current="currentPageId === page.id ? 'page' : undefined"
@@ -24,12 +26,6 @@ const logOut = () => {
         >
           {{ page.label }}
         </button>
-      </div>
-
-      <div v-if="currentUser" class="user-badge">
-        <span class="user-avatar" aria-hidden="true">{{ profile?.avatar ?? "…" }}</span>
-        <span><strong>{{ currentUser.nickname }}</strong></span>
-        <button type="button" class="secondary small" @click="logOut">Log out</button>
       </div>
     </nav>
 
@@ -40,7 +36,7 @@ const logOut = () => {
 <style scoped>
 .brand { font-size:1.8rem; font-weight:950; letter-spacing:-.07em; display:flex; align-items:center; }
 .brand span { color:#c93813; }
-.brand small { margin-left:auto; font-size:.65rem; letter-spacing:.15em; color:var(--muted); }
+.brand-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 16px; }
 .tabs .primary { background:var(--ink); color:var(--surface); }
 .navbar-wrap {
   display: flex;
@@ -69,39 +65,20 @@ const logOut = () => {
   padding: 0.6rem 0.9rem;
 }
 
-.user-badge {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ink);
-  font-size: 0.92rem;
-}
-
-.user-badge strong {
-  color: var(--ink);
-}
-
-.user-avatar {
-  font-size: 1.6rem;
-}
-
 .error-box {
   margin-bottom: 0;
 }
 
 @media (max-width: 640px) {
-  .navbar,
-  .user-badge {
+  .navbar {
     flex-direction: column;
     align-items: stretch;
   }
 
   .tabs button {
     flex: 1 1 30%;
-  }
-
-  .user-badge {
-    text-align: center;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
   }
 }
 </style>

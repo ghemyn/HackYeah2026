@@ -1,8 +1,8 @@
 import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
 import { todayKey } from "../common";
 import { applyCheckIn, checkInBlocker, habitStandings, isDailyLimitReached, settleAllMembers } from "../game/progress";
-import { POINTS } from "../game/rules";
-import { badgeData, badgeRef } from "./badges";
+import { LAZY_SNAIL_AFTER_MISSES, POINTS } from "../game/rules";
+import { badgeData, badgeRef, milestoneData, milestoneRef } from "./badges";
 import { COLLECTIONS, db } from "./firebase";
 import { habitRef, isHabitMember, membershipData, tauntRef, toHabit, type Habit } from "./habits";
 import { writeLazySnailBadges } from "./settlement";
@@ -38,10 +38,11 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
     const today = todayKey();
     // The habit document holds the member's check-in counts. The transaction retries if it changes
     // meanwhile, so two scans at once can never both pass the daily limit.
-    const [userSnapshot, habitSnapshot, tauntSnapshot] = await Promise.all([
+    const [userSnapshot, habitSnapshot, tauntSnapshot, comebackSnapshot] = await Promise.all([
       transaction.get(userRef(userId)),
       transaction.get(habitRef(habitId)),
       transaction.get(tauntRef(habitId, userId)),
+      transaction.get(milestoneRef(userId, "comeback")),
     ]);
 
     if (!userSnapshot.exists()) {
@@ -85,6 +86,11 @@ export const checkIn = (userId: string, habitId: string, method: CheckInMethod):
 
     if (blocker) {
       throw new Error(blocker);
+    }
+
+    // Checking in while being a Lazy Snail earns the Comeback milestone (once).
+    if (members[userId].missedInRow >= LAZY_SNAIL_AFTER_MISSES && !comebackSnapshot.exists()) {
+      transaction.set(comebackSnapshot.ref, milestoneData(userId, "comeback", today, habit));
     }
 
     const outcome = applyCheckIn(habit, members[userId], today);

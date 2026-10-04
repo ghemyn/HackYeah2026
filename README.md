@@ -37,8 +37,8 @@ Rule of thumb: **work in your own page/component; only touch shared files for sm
 | `src/pages/` | One `.vue` file per page (Habits, Scan, Friends, Profile, Login), with its own logic and scoped styles. |
 | `src/pages/index.ts` | Page registry. To add a page, create it in `src/pages/` and add **one line** here. |
 | `src/components/` | Reusable UI pieces: `NavBar`, `HabitCard`, `HabitForm`, `SchedulePicker` (how a habit repeats), `HabitLeaderboard` (a habit's own leaderboard), `HabitMembers` (friends' activity in a habit), `FriendHabits` (habits to join), `TauntComposer` (the leader writes a taunt), `TauntBanner` (a taunt at you, above the habit's card), `QrCodeCard`, `EmojiPicker`. |
-| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`, `taunts`) plus `settlement.ts` (penalties), `auth.ts` (registration and login with Firebase Authentication), `sha256.ts` and `firebase.ts` (setup). |
-| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), scoring helpers (`progress.ts`), who can taunt whom (`taunts.ts`). |
+| `src/db/` | All Firestore access, one file per collection (`users`, `habits`, `checkins`, `friends`, `badges`, `taunts`) plus `settlement.ts` (penalties), `auth.ts` (registration and login with Firebase Authentication), `milestones.ts` (awards milestone badges), `sha256.ts` and `firebase.ts` (setup). |
+| `src/game/` | Game rules without any Firebase code: point values (`rules.ts`), habit schedules (`schedule.ts`), avatars/icons/frequencies (`catalog.ts`), badge types (`badges.ts`), milestone badges (`milestones.ts`), scoring helpers (`progress.ts`), who can taunt whom (`taunts.ts`). |
 | `src/scanners/` | QR (`qrScanner.ts`) and NFC (`nfcScanner.ts`) reading/writing, and what the codes contain (`payload.ts`). |
 | `src/composables/` | Reusable Vue logic: live friend profiles, cached profiles of any player, today's date. |
 | `src/common.ts` | Helpers shared everywhere: UUIDs, dates, error messages, file names. |
@@ -66,6 +66,7 @@ All numbers are in `src/game/rules.ts`. **Points belong to a habit, not to the a
   - **On set weekdays** (any combination of Mon–Sun). Check-ins are only possible on those days.
 - Penalties start after joining: for weekday schedules from the day after joining, for interval schedules with the first cycle that starts after the joining day.
 - **Damage.** When a player's points in a habit dropped through penalties since they last looked (each device remembers the last points it showed), a "−X pts" card pops up over that habit's card, stays for 2 seconds and then fades out over 2 seconds.
+- **Milestone badges** are earned once each, for progress such as a first habit, 3 or 5 habits at once, creating a habit, 1/10/50/100 check-ins, 3/14/30 check-ins in a row, 100 points in one habit, leading a leaderboard against a rival, a first friend or 5 friends, a first taunt, and checking in while being a Lazy Snail. The full list is in `src/game/milestones.ts`. They are awarded automatically while the player is logged in and listed with the other badges on the Profile page.
 - **Taunts.** The habit's leader (👑) can taunt members who haven't checked in today but still can, from the habit's leaderboard: 1–5 emojis plus an optional message (up to 100 characters). The taunted player sees it live, animated over that habit's card (it can be shrunk to a badge that slowly circles the card), and everyone sees "Taunted" next to them in the leaderboard. It stays until they check in (scanning cancels it in the same transaction) or leave the habit. A new taunt at the same player in the same habit replaces the old one. Taunts cost no points.
 - There is no server: when any member opens the app or checks in, every member of that habit is charged what they owe. A player who never opens the app still loses points. This is idempotent, so nothing is charged twice. Leaderboards also include penalties that are due but not saved yet.
 
@@ -118,14 +119,15 @@ Stored in both directions, so adding a friend writes two documents.
 | `userId`, `friendId` | string |
 | `createdAt` | timestamp |
 
-### `badges/{userId}:{type}:{date}:{habitId}`
+### `badges/{userId}:{type}:{date}:{habitId}` and `badges/{userId}:{type}`
+Streak and Lazy Snail badges can be earned again (one per habit and day). Milestones are earned once, so their ID is only the player and the type.
 
 | Field | Type |
 | --- | --- |
 | `userId` | string |
-| `type` | `"streak"` or `"lazySnail"` |
-| `date` | string |
-| `habitId`, `habitName` | string (the name is copied so it survives the habit being deleted) |
+| `type` | `"streak"`, `"lazySnail"` or a milestone from `MILESTONES` in `src/game/milestones.ts` |
+| `date` | string (day earned) |
+| `habitId`, `habitName` | string: the habit it was earned in, `""` for milestones that don't belong to one (the name is copied so it survives the habit being deleted) |
 | `createdAt` | timestamp |
 
 ### `taunts/{habitId}:{targetId}`

@@ -107,16 +107,27 @@ service cloud.firestore {
     }
 
     match /badges/{badgeId} {
+      // Must match MILESTONES in src/game/milestones.ts.
+      function isMilestone(type) {
+        return type in ['firstHabit', 'habitMaker', 'threeHabits', 'fiveHabits', 'firstCheckIn', 'tenCheckIns', 'fiftyCheckIns', 'hundredCheckIns', 'streak3', 'streak14', 'streak30', 'hundredPoints', 'leader', 'firstFriend', 'squad', 'firstTaunt', 'comeback'];
+      }
+
       allow read: if signedIn();
 
       // Players earn their own streak badges. Lazy Snail badges are handed out to other members too, because
-      // penalties are applied by whichever member opens the app.
+      // penalties are applied by whichever member opens the app. Milestones are earned once, by the player
+      // themselves, so their ID is only "<userId>:<type>".
       allow create, update: if hasVerifiedUserId()
         && request.resource.data.keys().hasOnly(['userId', 'type', 'date', 'habitId', 'habitName', 'createdAt'])
-        && request.resource.data.type in ['streak', 'lazySnail']
-        && (request.resource.data.type == 'lazySnail' || isPlayer(request.resource.data.userId))
-        && badgeId == request.resource.data.userId + ':' + request.resource.data.type + ':'
-          + request.resource.data.date + ':' + request.resource.data.habitId;
+        && (
+          (request.resource.data.type in ['streak', 'lazySnail']
+            && (request.resource.data.type == 'lazySnail' || isPlayer(request.resource.data.userId))
+            && badgeId == request.resource.data.userId + ':' + request.resource.data.type + ':'
+              + request.resource.data.date + ':' + request.resource.data.habitId)
+          || (isMilestone(request.resource.data.type)
+            && isPlayer(request.resource.data.userId)
+            && badgeId == request.resource.data.userId + ':' + request.resource.data.type)
+        );
 
       allow delete: if false;
     }
